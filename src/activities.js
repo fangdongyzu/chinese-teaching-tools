@@ -1,5 +1,5 @@
-// Add future activity modules here and implement their server-side validator in
-// functions/activities. Keep completion writes on the server.
+// Register future activity interfaces here. Keep their Firestore writes protected
+// by rules, and identify browser-reported validation in the teacher interface.
 export const ACTIVITIES = [
   {
     id: "stroke-order",

@@ -5,21 +5,199 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email_verified == true
         && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
+    function owner() {
+      return googleUser() && request.auth.token.email.lower() in ['tristanlpd@gm.lhu.edu.tw', 'tristanlpd@gmail.com'];
+    }
     function teacher() {
-      return googleUser() && (request.auth.token.email.lower() in ['tristanlpd@gm.lhu.edu.tw', 'tristanlpd@gmail.com']
-        || exists(/databases/$(database)/documents/teachers/$(request.auth.token.email.lower())));
+      return owner() || (googleUser() && exists(/databases/$(database)/documents/teachers/$(request.auth.token.email.lower())));
     }
-    function enrolled(assignmentId) {
-      return googleUser() && exists(/databases/$(database)/documents/enrollments/$(assignmentId + '_' + request.auth.uid));
+    function assignment(id) { return get(/databases/$(database)/documents/assignments/$(id)).data; }
+    function memberPath(id) { return /databases/$(database)/documents/enrollments/$(id + '_' + request.auth.uid); }
+    function open(id) {
+      let a = assignment(id);
+      return a.status == 'open' && (a.dueAt == null || request.time < a.dueAt);
     }
-    // All mutations go through authenticated callable functions. Browsers cannot
-    // grant roles, fabricate attempts, change counts, or create submissions.
-    match /teachers/{email} { allow read: if teacher() || (googleUser() && request.auth.token.email.lower() == email); allow write: if false; }
-    match /users/{uid} { allow read: if googleUser() && (request.auth.uid == uid || teacher()); allow write: if false; }
-    match /assignments/{assignmentId} { allow read: if teacher() || enrolled(assignmentId); allow write: if false; }
-    match /enrollments/{enrollmentId} { allow read: if googleUser() && (teacher() || resource.data.userId == request.auth.uid); allow write: if false; }
-    match /attempts/{attemptId} { allow read: if googleUser() && (teacher() || resource.data.userId == request.auth.uid); allow write: if false; }
-    match /submissions/{submissionId} { allow read: if googleUser() && (teacher() || resource.data.userId == request.auth.uid); allow write: if false; }
+    function rosterAllows(id) {
+      let a = assignment(id);
+      return a.studentEmails.size() == 0 || request.auth.token.email.lower() in a.studentEmails;
+    }
+    function selfRecord(data) { return googleUser() && data.userId == request.auth.uid; }
+    function protectedOwner(email) { return email in ['tristanlpd@gm.lhu.edu.tw', 'tristanlpd@gmail.com']; }
+
+    match /users/{uid} {
+      allow read: if googleUser() && (request.auth.uid == uid || teacher());
+      allow create, update: if googleUser() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email','displayName','photoURL','lastLoginAt'])
+        && request.resource.data.email == request.auth.token.email.lower()
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 120
+        && request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 1000
+        && request.resource.data.lastLoginAt == request.time;
+      allow delete: if false;
+    }
+    match /teachers/{email} {
+      allow read: if teacher() || (googleUser() && request.auth.token.email.lower() == email);
+      allow create, update: if owner() && !protectedOwner(email)
+        && request.resource.data.keys().hasOnly(['email','role','grantedBy','grantedAt'])
+        && request.resource.data.email == email && request.resource.data.role == 'teacher'
+        && request.resource.data.grantedBy == request.auth.token.email.lower()
+        && request.resource.data.grantedAt == request.time;
+      allow delete: if owner() && !protectedOwner(email);
+    }
+    match /assignments/{id} {
+      allow read: if teacher();
+      allow create: if teacher()
+        && request.resource.data.keys().hasOnly(['title','text','characters','repetitions','mode','dueAt','studentEmails','activityType','instructions','className','strokeCounts','code','status','createdBy','teacherEmail','createdAt','updatedAt'])
+        && request.resource.data.title is string && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 120
+        && request.resource.data.text is string && request.resource.data.text.size() <= 10000
+        && request.resource.data.characters is list && request.resource.data.characters.size() > 0 && request.resource.data.characters.size() <= 80
+        && request.resource.data.characters.toSet().size() == request.resource.data.characters.size()
+        && request.resource.data.repetitions is int && request.resource.data.repetitions >= 1 && request.resource.data.repetitions <= 50
+        && request.resource.data.mode in ['trace','write'] && request.resource.data.activityType == 'stroke-order'
+        && request.resource.data.studentEmails is list && request.resource.data.studentEmails.size() <= 200
+        && request.resource.data.strokeCounts is map && request.resource.data.strokeCounts.keys().toSet() == request.resource.data.characters.toSet()
+        && request.resource.data.code.matches('^[A-Z2-9]{7}$') && request.resource.data.status == 'open'
+        && request.resource.data.createdBy == request.auth.uid && request.resource.data.teacherEmail == request.auth.token.email.lower()
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+        && (request.resource.data.dueAt == null || request.resource.data.dueAt > request.time)
+        && getAfter(/databases/$(database)/documents/assignmentCodes/$(request.resource.data.code)).data.assignmentId == id;
+      allow update: if teacher() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updatedAt'])
+        && request.resource.data.status in ['open','closed'] && request.resource.data.updatedAt == request.time
+        && getAfter(/databases/$(database)/documents/assignmentCodes/$(resource.data.code)).data.status == request.resource.data.status;
+      allow delete: if false;
+    }
+    match /assignmentCodes/{code} {
+      allow get: if teacher() || (googleUser() && rosterAllows(resource.data.assignmentId));
+      allow list: if teacher();
+      allow create: if teacher()
+        && request.resource.data.keys().hasOnly(['assignmentId','title','text','className','characters','repetitions','mode','instructions','activityType','dueAt','code','status','strokeCounts'])
+        && request.resource.data.code == code
+        && getAfter(/databases/$(database)/documents/assignments/$(request.resource.data.assignmentId)).data.code == code
+        && request.resource.data.characters == getAfter(/databases/$(database)/documents/assignments/$(request.resource.data.assignmentId)).data.characters
+        && request.resource.data.repetitions == getAfter(/databases/$(database)/documents/assignments/$(request.resource.data.assignmentId)).data.repetitions
+        && request.resource.data.status == 'open';
+      allow update: if teacher() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status == getAfter(/databases/$(database)/documents/assignments/$(resource.data.assignmentId)).data.status;
+      allow delete: if false;
+    }
+    match /enrollments/{enrollmentId} {
+      function validJoin() {
+        let r = request.resource.data;
+        let a = assignment(r.assignmentId);
+        return r.keys().hasOnly(['assignmentId','code','userId','studentEmail','studentName','title','className','activityType','characters','repetitions','counts','status','totalMistakes','totalElapsedMs','joinedAt','updatedAt','submittedAt','activeAttemptId','lastCountedAttemptId'])
+          && enrollmentId == r.assignmentId + '_' + request.auth.uid
+          && r.userId == request.auth.uid && r.studentEmail == request.auth.token.email.lower()
+          && r.studentName is string && r.studentName.size() <= 120
+          && open(r.assignmentId) && rosterAllows(r.assignmentId)
+          && r.code == a.code && r.title == a.title && r.className == a.className && r.activityType == a.activityType
+          && r.characters == a.characters && r.repetitions == a.repetitions
+          && r.counts is map && r.counts.keys().toSet() == a.characters.toSet() && r.counts.values().hasOnly([0])
+          && r.status == 'in-progress' && r.totalMistakes == 0 && r.totalElapsedMs == 0
+          && r.joinedAt == request.time && r.updatedAt == request.time && r.submittedAt == null
+          && r.activeAttemptId == null && r.lastCountedAttemptId == null;
+      }
+      function startTransition() {
+        let next = request.resource.data;
+        return next.diff(resource.data).affectedKeys().hasOnly(['activeAttemptId','updatedAt'])
+          && next.activeAttemptId is string
+          && getAfter(/databases/$(database)/documents/attempts/$(next.activeAttemptId)).data.status == 'started'
+          && getAfter(/databases/$(database)/documents/attempts/$(next.activeAttemptId)).data.userId == request.auth.uid
+          && getAfter(/databases/$(database)/documents/attempts/$(next.activeAttemptId)).data.assignmentId == resource.data.assignmentId
+          && (resource.data.activeAttemptId == null || resource.data.activeAttemptId == next.activeAttemptId
+            || getAfter(/databases/$(database)/documents/attempts/$(resource.data.activeAttemptId)).data.status == 'abandoned');
+      }
+      function countTransition() {
+        let r = request.resource.data;
+        let t = getAfter(/databases/$(database)/documents/attempts/$(r.lastCountedAttemptId)).data;
+        return r.diff(resource.data).affectedKeys().hasOnly(['counts','totalMistakes','totalElapsedMs','activeAttemptId','lastCountedAttemptId','updatedAt'])
+          && resource.data.activeAttemptId == r.lastCountedAttemptId && r.activeAttemptId == null
+          && t.status == 'completed' && t.endedAt == request.time
+          && t.userId == request.auth.uid && t.assignmentId == resource.data.assignmentId
+          && r.counts.diff(resource.data.counts).affectedKeys().hasOnly([t.character])
+          && r.counts[t.character] is int && r.counts[t.character] == resource.data.counts[t.character] + 1
+          && r.counts[t.character] <= resource.data.repetitions
+          && r.totalMistakes == resource.data.totalMistakes + t.mistakes
+          && r.totalElapsedMs == resource.data.totalElapsedMs + t.elapsedMs;
+      }
+      function submitTransition() {
+        let r = request.resource.data;
+        return r.diff(resource.data).affectedKeys().hasOnly(['status','submittedAt','activeAttemptId','updatedAt'])
+          && r.status == 'submitted' && r.submittedAt == request.time && r.activeAttemptId == null
+          && resource.data.counts.values().hasOnly([resource.data.repetitions])
+          && getAfter(/databases/$(database)/documents/submissions/$(enrollmentId)).data.submittedAt == request.time;
+      }
+      allow get: if googleUser() && (!exists(/databases/$(database)/documents/enrollments/$(enrollmentId)) || selfRecord(resource.data) || teacher());
+      allow list: if selfRecord(resource.data) || teacher();
+      allow create: if googleUser() && validJoin();
+      allow update: if selfRecord(resource.data) && resource.data.status == 'in-progress'
+        && open(resource.data.assignmentId) && request.resource.data.updatedAt == request.time
+        && (startTransition() || countTransition() || submitTransition());
+      allow delete: if false;
+      match /fingerprints/{hash} {
+        function parent() { return get(/databases/$(database)/documents/enrollments/$(enrollmentId)).data; }
+        allow read: if selfRecord(parent()) || teacher();
+        allow create: if selfRecord(parent()) && hash.matches('^[a-f0-9]{64}$')
+          && request.resource.data.keys().hasOnly(['attemptId','createdAt']) && request.resource.data.createdAt == request.time
+          && getAfter(/databases/$(database)/documents/attempts/$(request.resource.data.attemptId)).data.fingerprint == hash
+          && getAfter(/databases/$(database)/documents/attempts/$(request.resource.data.attemptId)).data.status == 'completed'
+          && getAfter(/databases/$(database)/documents/enrollments/$(enrollmentId)).data.lastCountedAttemptId == request.resource.data.attemptId;
+        allow update, delete: if false;
+      }
+    }
+    match /attempts/{attemptId} {
+      function validStart() {
+        let r = request.resource.data;
+        let a = assignment(r.assignmentId);
+        let m = get(memberPath(r.assignmentId)).data;
+        return r.keys().hasOnly(['assignmentId','userId','code','characterIndex','character','status','startedAt','endedAt','elapsedMs','mistakes','strokes','fingerprint','validationSource'])
+          && r.userId == request.auth.uid && r.code == a.code && open(r.assignmentId)
+          && m.userId == request.auth.uid && m.status == 'in-progress'
+          && r.characterIndex is int && r.characterIndex >= 0 && r.characterIndex < a.characters.size()
+          && r.character == a.characters[r.characterIndex] && m.counts[r.character] < a.repetitions
+          && r.status == 'started' && r.startedAt == request.time && r.endedAt == null
+          && r.elapsedMs == 0 && r.mistakes == 0 && r.strokes.size() == 0 && r.fingerprint == null && r.validationSource == 'browser'
+          && getAfter(memberPath(r.assignmentId)).data.activeAttemptId == attemptId;
+      }
+      function validComplete() {
+        let r = request.resource.data;
+        let m = get(memberPath(resource.data.assignmentId)).data;
+        return r.diff(resource.data).affectedKeys().hasOnly(['status','endedAt','elapsedMs','mistakes','strokes','fingerprint'])
+          && r.status == 'completed' && r.endedAt == request.time && open(resource.data.assignmentId)
+          && request.time <= resource.data.startedAt + duration.value(30, 'm')
+          && m.activeAttemptId == attemptId && m.status == 'in-progress'
+          && r.elapsedMs is int && r.elapsedMs >= 0 && r.elapsedMs <= 1800000
+          && r.mistakes is int && r.mistakes >= 0 && r.mistakes <= 10000
+          && r.strokes is list && r.strokes.size() == assignment(resource.data.assignmentId).strokeCounts[resource.data.character]
+          && r.fingerprint.matches('^[a-f0-9]{64}$')
+          && !exists(/databases/$(database)/documents/enrollments/$(resource.data.assignmentId + '_' + request.auth.uid)/fingerprints/$(r.fingerprint))
+          && getAfter(/databases/$(database)/documents/enrollments/$(resource.data.assignmentId + '_' + request.auth.uid)/fingerprints/$(r.fingerprint)).data.attemptId == attemptId
+          && getAfter(memberPath(resource.data.assignmentId)).data.lastCountedAttemptId == attemptId;
+      }
+      allow read: if selfRecord(resource.data) || teacher();
+      allow create: if googleUser() && validStart();
+      allow update: if selfRecord(resource.data) && resource.data.status == 'started'
+        && (validComplete() || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','endedAt'])
+          && request.resource.data.status == 'abandoned' && request.resource.data.endedAt == request.time));
+      allow delete: if false;
+    }
+    match /submissions/{submissionId} {
+      function validSubmission() {
+        let r = request.resource.data;
+        let m = get(memberPath(r.assignmentId)).data;
+        return r.keys().hasOnly(['assignmentId','userId','studentEmail','studentName','title','characters','repetitions','counts','totalMistakes','totalElapsedMs','submittedAt','status','validationSource'])
+          && submissionId == r.assignmentId + '_' + request.auth.uid && r.userId == request.auth.uid
+          && open(r.assignmentId) && m.userId == request.auth.uid && m.status == 'in-progress'
+          && m.counts.values().hasOnly([m.repetitions]) && r.counts == m.counts
+          && r.studentEmail == request.auth.token.email.lower() && r.studentName == m.studentName
+          && r.title == m.title && r.characters == m.characters && r.repetitions == m.repetitions
+          && r.totalMistakes == m.totalMistakes && r.totalElapsedMs == m.totalElapsedMs
+          && r.submittedAt == request.time && r.status == 'submitted' && r.validationSource == 'browser'
+          && getAfter(memberPath(r.assignmentId)).data.status == 'submitted';
+      }
+      allow get: if googleUser() && (!exists(/databases/$(database)/documents/submissions/$(submissionId)) || selfRecord(resource.data) || teacher());
+      allow list: if selfRecord(resource.data) || teacher();
+      allow create: if googleUser() && validSubmission();
+      allow update, delete: if false;
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }

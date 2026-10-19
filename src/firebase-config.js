@@ -9,4 +9,3 @@ export const firebaseConfig = {
   projectNumber: "911108691757",
   version: "2",
 };
-export const functionsRegion = "asia-east1";

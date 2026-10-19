@@ -10,7 +10,8 @@ import {
 } from "firebase/firestore";
 import {
   configured,
-  backendReady,
+  enrollmentRecord,
+  assignmentFromEnrollment,
   auth,
   db,
   observeAuth,
@@ -32,6 +33,7 @@ import {
 import { mountPractice, cleanupPractice } from "./activities/stroke-order.js";
 const app = document.getElementById("app"),
   dialog = document.getElementById("dialog");
+let subscriptionRevision = 0;
 const previewMode = new URLSearchParams(location.search).get("preview");
 const preview =
   import.meta.env.DEV && ["teacher", "student"].includes(previewMode);
@@ -55,7 +57,7 @@ const personal = () =>
   state.enrollments.filter((r) => r.userId === state.user?.uid);
 const hasExpired = (a) => a.dueAt && timeValue(a.dueAt) < Date.now();
 const button = (label, action, id = "", classes = "") =>
-  `<button class="btn ${classes}" data-action="${action}" ${id ? `data-id="${e(id)}"` : ""} ${action === "login" && !backendReady ? "disabled" : ""}>${label}</button>`;
+  `<button class="btn ${classes}" data-action="${action}" ${id ? `data-id="${e(id)}"` : ""} ${action === "login" && !configured ? "disabled" : ""}>${label}</button>`;
 const badge = (a) =>
   `<span class="badge ${a.status === "closed" || hasExpired(a) ? "gray" : ""}">${hasExpired(a) ? "Past due" : a.status === "closed" ? "Closed" : "Open"}</span>`;
 function header() {
@@ -75,7 +77,7 @@ function shell(content) {
   return `<div class="shell">${header()}${preview ? `<div class="banner preview"><span>Interface preview · sample data · no real accounts or results</span><a href="./">Exit preview</a></div>` : ""}${state.profile ? `<div class="workspace">${navigation()}<main class="main" id="main-content">${content}</main></div>` : `<main>${content}</main>`}<footer class="footer"><span>Practice Classroom · Learn through practice.</span><span>Google sign-in · Firebase</span></footer></div>`;
 }
 function landing() {
-  return `<section class="landing"><div class="landing-content"><div><div class="eyebrow">YOUR WORDS. THEIR PRACTICE.</div><h1>A little practice.<br>Progress you can see.</h1><p>A classroom for Chinese assignments. Teachers set the task; students practice each character and submit their recorded results.</p>${button('<span class="google-g">G</span> Continue with Google', "login", "", "primary")}<p class="login-caption">Use your teacher or student Google account.<br>Your teacher shares an assignment code to get you started.</p>${!configured ? '<div class="banner">Firebase configuration is not complete yet.</div>' : !backendReady ? '<div class="banner">Classroom setup is in progress. Assignment services must be activated before teachers and students can sign in.</div>' : ""}${state.error ? `<div class="banner">${e(state.error)}</div>` : ""}</div><div class="login-panel"><div class="paper-mark" lang="zh">學 習</div><ul><li><span>01</span> Your teacher assigns text and a practice target.</li><li><span>02</span> Write each character the required number of times.</li><li><span>03</span> Submit your results for your teacher to review.</li></ul></div></div></section>`;
+  return `<section class="landing"><div class="landing-content"><div><div class="eyebrow">YOUR WORDS. THEIR PRACTICE.</div><h1>A little practice.<br>Progress you can see.</h1><p>A classroom for Chinese assignments. Teachers set the task; students practice each character and submit their recorded results.</p>${button('<span class="google-g">G</span> Continue with Google', "login", "", "primary")}<p class="login-caption">Use your teacher or student Google account.<br>Your teacher shares an assignment code to get you started.</p>${!configured ? '<div class="banner">Firebase configuration is not complete yet.</div>' : ""}${state.error ? `<div class="banner">${e(state.error)}</div>` : ""}</div><div class="login-panel"><div class="paper-mark" lang="zh">學 習</div><ul><li><span>01</span> Your teacher assigns text and a practice target.</li><li><span>02</span> Write each character the required number of times.</li><li><span>03</span> Submit your results for your teacher to review.</li></ul></div></div></section>`;
 }
 function teacherAssignments() {
   const submissions = state.enrollments.filter(
@@ -146,12 +148,17 @@ function render() {
   wireForms();
 }
 function stopListeners() {
+  subscriptionRevision++;
   state.unsub.forEach((fn) => fn());
   state.unsub = [];
 }
 function subscribe() {
   stopListeners();
-  const onError = (error) => toast(errorMessage(error), true);
+  const revision = subscriptionRevision;
+  const asTeacher = teacherView();
+  const onError = (error) => {
+    if (revision === subscriptionRevision) toast(errorMessage(error), true);
+  };
   const update = () => {
     if (!state.practice) render();
   };
@@ -165,21 +172,18 @@ function subscribe() {
     onSnapshot(
       enrollQuery,
       async (snapshot) => {
-        state.enrollments = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
-        if (!teacherView()) {
-          const docs = await Promise.all(
-            [...new Set(state.enrollments.map((r) => r.assignmentId))].map(
-              (id) => getDoc(doc(db, "assignments", id)),
-            ),
-          );
-          state.assignments = docs
-            .filter((d) => d.exists())
-            .map((d) => ({ id: d.id, ...d.data() }));
+        try {
+          const enrollments = snapshot.docs.map(enrollmentRecord);
+          const assignments = asTeacher
+            ? null
+            : await Promise.all(enrollments.map(assignmentFromEnrollment));
+          if (revision !== subscriptionRevision) return;
+          state.enrollments = enrollments;
+          if (assignments) state.assignments = assignments;
+          update();
+        } catch (error) {
+          onError(error);
         }
-        update();
       },
       onError,
     ),
@@ -189,6 +193,7 @@ function subscribe() {
       onSnapshot(
         collection(db, "assignments"),
         (snapshot) => {
+          if (revision !== subscriptionRevision) return;
           state.assignments = snapshot.docs
             .map((d) => ({ id: d.id, ...d.data() }))
             .sort((a, b) => timeValue(b.createdAt) - timeValue(a.createdAt));
@@ -201,6 +206,7 @@ function subscribe() {
       onSnapshot(
         collection(db, "teachers"),
         (snapshot) => {
+          if (revision !== subscriptionRevision) return;
           state.teachers = snapshot.docs.map((d) => ({
             id: d.id,
             ...d.data(),
@@ -344,7 +350,7 @@ async function reviewAssignment(id) {
 async function reviewStudent(id) {
   const r = state.enrollments.find((r) => r.id === id);
   openDialog(
-    `${dialogHead(r.studentName)}<p class="muted">${e(r.studentEmail)} · ${e(r.title)}</p><div class="details-list"><div><small>Status</small>${r.status === "submitted" ? "Submitted " + e(dateLabel(r.submittedAt)) : "In progress · not submitted"}</div><div><small>Recorded repetitions</small>${progress(r).done} / ${progress(r).target}</div><div><small>Elapsed practice time</small>${duration(r.totalElapsedMs)}</div><div><small>Reported try-agains</small>${r.totalMistakes}</div></div><div class="evidence-grid">${r.characters.map((char, i) => `<div class="evidence-item"><strong>${e(char)}</strong><small>${r.counts[i]} / ${r.repetitions}</small></div>`).join("")}</div><h3>Recorded practice attempts</h3><p class="muted">Counts are checked by the server. Elapsed time includes pauses; mistake counts are reported by the browser. Stroke records support review but do not prove who physically wrote them.</p><div id="attempt-list" class="loading">Loading recorded attempts…</div><div class="form-actions">${button("Back to assignment", "review-assignment", r.assignmentId)}</div>`,
+    `${dialogHead(r.studentName)}<p class="muted">${e(r.studentEmail)} · ${e(r.title)}</p><div class="details-list"><div><small>Status</small>${r.status === "submitted" ? "Submitted " + e(dateLabel(r.submittedAt)) : "In progress · not submitted"}</div><div><small>Recorded repetitions</small>${progress(r).done} / ${progress(r).target}</div><div><small>Reported elapsed time</small>${duration(r.totalElapsedMs)}</div><div><small>Reported try-agains</small>${r.totalMistakes}</div></div><div class="evidence-grid">${r.characters.map((char, i) => `<div class="evidence-item"><strong>${e(char)}</strong><small>${r.counts[i]} / ${r.repetitions}</small></div>`).join("")}</div><h3>Recorded practice attempts</h3><p class="muted">Spark edition: strokes, counts, and timing are reported by the student’s browser. Saved stroke paths support teacher review; they are not independent proof of practice or human authorship.</p><div id="attempt-list" class="loading">Loading recorded attempts…</div><div class="form-actions">${button("Back to assignment", "review-assignment", r.assignmentId)}</div>`,
   );
   try {
     let attempts;
@@ -406,8 +412,7 @@ async function openPractice(id) {
   }
   let assignment = state.assignments.find((a) => a.id === id);
   if (!assignment && !preview) {
-    const snapshot = await getDoc(doc(db, "assignments", id));
-    if (snapshot.exists()) assignment = { id: snapshot.id, ...snapshot.data() };
+    assignment = await assignmentFromEnrollment(enrollment);
   }
   if (!assignment) {
     toast("Assignment not found.", true);
@@ -427,7 +432,7 @@ async function openPractice(id) {
       if (!preview) {
         const snap = await getDoc(doc(db, "enrollments", enrollment.id));
         if (snap.exists()) {
-          const updated = { id: snap.id, ...snap.data() };
+          const updated = enrollmentRecord(snap);
           state.enrollments = state.enrollments.map((r) =>
             r.id === updated.id ? updated : r,
           );

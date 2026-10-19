@@ -1,26 +1,16 @@
 import { spawnSync } from "node:child_process";
-function run(command, args, extraEnv = {}) {
+function run(command, args) {
   const result = spawnSync(command, args, {
     stdio: "inherit",
-    env: { ...process.env, ...extraEnv },
+    env: process.env,
   });
   if (result.status !== 0) process.exit(result.status || 1);
 }
-// The functions step must succeed before enabling production sign-in. This
-// never links a billing account or upgrades the Firebase plan automatically.
+run("npm", ["run", "build"]);
 run("firebase", [
   "deploy",
   "--only",
-  "firestore,functions",
-  "--project",
-  "chinese-teaching-tools",
-  "--non-interactive",
-]);
-run("npm", ["run", "build"], { VITE_BACKEND_READY: "true" });
-run("firebase", [
-  "deploy",
-  "--only",
-  "hosting",
+  "firestore,hosting",
   "--project",
   "chinese-teaching-tools",
   "--non-interactive",

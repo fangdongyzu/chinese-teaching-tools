@@ -7,10 +7,10 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test functions/test/*.test.cjs",
-    "test:rules": "firebase emulators:exec --project demo-teaching-tools --only firestore 'node --test tests/rules.test.mjs'",
+    "test": "node --test tests/domain.test.mjs",
+    "test:rules": "firebase emulators:exec --project demo-teaching-tools --only firestore \"node --test tests/spark.test.mjs\"",
     "deploy": "node scripts/deploy.mjs",
-    "test:emulator": "firebase emulators:exec --project demo-teaching-tools --only firestore \"node --test tests/rules.test.mjs && node --test tests/integration.test.cjs\""
+    "test:emulator": "firebase emulators:exec --project demo-teaching-tools --only firestore \"node --test tests/spark.test.mjs\""
   },
   "dependencies": {
     "firebase": "12.19.0",

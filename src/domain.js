@@ -1,5 +1,3 @@
-"use strict";
-const { createHash } = require("node:crypto");
 class ValidationError extends Error {
   constructor(message, code = "invalid-argument") {
     super(message);
@@ -22,32 +20,6 @@ function email(value) {
     fail("Enter a valid email address.");
   return value.trim().toLowerCase();
 }
-function googleIdentity(auth) {
-  if (!auth || !auth.uid)
-    fail("Sign in with Google to continue.", "unauthenticated");
-  if (
-    !auth.token?.email_verified ||
-    auth.token.firebase?.sign_in_provider !== "google.com"
-  )
-    fail("A verified Google account is required.", "permission-denied");
-  return {
-    uid: auth.uid,
-    email: email(auth.token.email),
-    name: String(auth.token.name || auth.token.email).slice(0, 120),
-    photoURL: String(auth.token.picture || "").slice(0, 1000),
-  };
-}
-function charData(char) {
-  if (typeof char !== "string" || !/^\p{Script=Han}$/u.test(char))
-    fail("Invalid Chinese character.");
-  try {
-    return require(`hanzi-writer-data/${char}.json`);
-  } catch {
-    fail(
-      `Stroke data is unavailable for “${char}”. Remove it from this assignment.`,
-    );
-  }
-}
 function normalizeAssignment(input, now = Date.now()) {
   if (!input || typeof input !== "object")
     fail("Assignment details are required.");
@@ -65,7 +37,6 @@ function normalizeAssignment(input, now = Date.now()) {
     fail(
       "Use between 1 and 80 different Chinese characters. Repeated characters share a practice quota.",
     );
-  characters.forEach(charData);
   const repetitions = input.repetitions;
   if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 50)
     fail("Repetitions must be a whole number from 1 to 50.");
@@ -124,8 +95,7 @@ function resample(path, count = 24) {
   result.push(path.at(-1));
   return result;
 }
-function validateAttempt(char, paths) {
-  const data = charData(char);
+function validateAttempt(char, paths, data) {
   if (!Array.isArray(paths) || paths.length !== data.medians.length)
     fail("Complete every stroke in order before saving.");
   const normalized = paths.map((path, index) => {
@@ -170,9 +140,6 @@ function validateAttempt(char, paths) {
   });
   return {
     strokes: normalized,
-    fingerprint: createHash("sha256")
-      .update(char + JSON.stringify(normalized))
-      .digest("hex"),
     strokeCount: data.strokes.length,
   };
 }
@@ -183,12 +150,19 @@ function canSubmit(counts, characters, repetitions) {
     counts.every((n) => Number.isInteger(n) && n >= repetitions)
   );
 }
-module.exports = {
+export async function fingerprint(char, strokes) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(char + JSON.stringify(strokes)),
+  );
+  return Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+}
+export {
   ValidationError,
   OWNERS,
   email,
-  googleIdentity,
-  charData,
   normalizeAssignment,
   validateAttempt,
   canSubmit,
