@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function googleUser() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function teacher() {
+      return googleUser() && (request.auth.token.email.lower() in ['tristanlpd@gm.lhu.edu.tw', 'tristanlpd@gmail.com']
+        || exists(/databases/$(database)/documents/teachers/$(request.auth.token.email.lower())));
+    }
+    function enrolled(assignmentId) {
+      return googleUser() && exists(/databases/$(database)/documents/enrollments/$(assignmentId + '_' + request.auth.uid));
+    }
+    // All mutations go through authenticated callable functions. Browsers cannot
+    // grant roles, fabricate attempts, change counts, or create submissions.
+    match /teachers/{email} { allow read: if teacher() || (googleUser() && request.auth.token.email.lower() == email); allow write: if false; }
+    match /users/{uid} { allow read: if googleUser() && (request.auth.uid == uid || teacher()); allow write: if false; }
+    match /assignments/{assignmentId} { allow read: if teacher() || enrolled(assignmentId); allow write: if false; }
+    match /enrollments/{enrollmentId} { allow read: if googleUser() && (teacher() || resource.data.userId == request.auth.uid); allow write: if false; }
+    match /attempts/{attemptId} { allow read: if googleUser() && (teacher() || resource.data.userId == request.auth.uid); allow write: if false; }
+    match /submissions/{submissionId} { allow read: if googleUser() && (teacher() || resource.data.userId == request.auth.uid); allow write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
