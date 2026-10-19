@@ -105,3 +105,7 @@ The initial activity is stroke-order practice. No placeholder programs are prese
 ## Attribution
 
 Hanzi Writer 3.7.3 is MIT-licensed. Hanzi Writer Data 2.0.1 derives from Make Me a Hanzi / Arphic fonts, under the Arphic Public License. Stroke forms and orders can differ from regional teaching standards. See `THIRD_PARTY_NOTICES.md` and `public/licenses/`. Test JSON fixtures are unmodified excerpts of the same data.
+
+### Character pronunciation and Vietnamese meanings
+
+The practice panel shows tone-marked Mandarin pinyin and Vietnamese dictionary glosses for the selected character. “More readings & meanings” shows alternate pronunciations and full definitions. Both traditional and simplified forms are indexed (14,559 characters). Dictionary files are served with the site in small cached chunks; no translation API or paid Firebase feature is used. Missing entries or a temporary dictionary error do not block writing practice. Source and license: `public/data/character-dictionary/NOTICE.txt`.

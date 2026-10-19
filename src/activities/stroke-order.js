@@ -1,4 +1,5 @@
 import HanziWriter from "hanzi-writer";
+import { lookupCharacter } from "../character-dictionary.js";
 import { escape as e, toast, errorMessage, progress } from "../utils.js";
 const cache = new Map();
 let engine = null;
@@ -43,7 +44,7 @@ export async function mountPractice(root, assignment, enrollment, api) {
     data = null,
     loading = false;
   const p = progress(enrollment);
-  root.innerHTML = `<div class="practice-heading"><div><button class="text-btn" id="back-to-work">← My assignments</button><h1>${e(assignment.title)}</h1><p class="muted">${e(assignment.className)} ${assignment.className ? "·" : ""} ${assignment.repetitions} repetitions per character</p></div><span class="badge">${assignment.mode === "write" ? "Write from memory" : "Guided tracing"}</span></div><section class="panel"><div class="panel-heading"><span class="muted" id="practice-total" style="font-size:11px">${p.done} / ${p.target} repetitions recorded</span><span class="badge ${enrollment.status === "submitted" ? "" : "gray"}" id="submission-label">${enrollment.status === "submitted" ? "Submitted" : "In progress"}</span></div><div class="mode-switch" role="group" aria-label="Practice view"><button id="watch-mode">▷ Watch</button><button id="practice-mode">✎ ${assignment.mode === "write" ? "Write" : "Trace"} & record</button></div><div class="practice-layout"><div class="practice-canvas"><div class="board" id="practice-board" aria-label="Handwriting area"><svg class="grid-svg" viewBox="0 0 360 360" aria-hidden="true"><path d="M180 0v360M0 180h360M0 0l360 360M360 0 0 360"/></svg><div id="writer-target"></div><div id="board-message">Preparing practice…</div></div><nav class="char-nav" aria-label="Character navigation"><button class="btn" id="prev-char" aria-label="Previous character">←</button><div id="practice-characters" class="character-list"></div><button class="btn" id="next-char" aria-label="Next character">→</button></nav></div><div class="practice-side"><div class="practice-count"><span class="practice-current" id="practice-character"></span><div><strong id="repetition-count"></strong><small>recorded repetitions</small></div></div><progress id="repetition-progress" aria-label="Repetitions completed"></progress><div class="practice-facts"><div><strong id="stroke-counter">0 / –</strong><span>strokes</span></div><div><strong id="practice-mistakes">0</strong><span>try-agains</span></div></div><button id="play-strokes" class="btn primary">▷ Play stroke order</button><button id="redo-repetition" class="btn">↺ Redo repetition</button><button id="repeat-character" class="btn primary" hidden>Next repetition →</button><button id="retry-record" class="btn primary" hidden>Retry saving this repetition</button><button id="submit-work" class="btn primary">Submit assignment</button><div class="practice-feedback" id="practice-feedback" role="status" aria-live="polite"></div></div></div>${assignment.instructions ? `<p class="muted" style="white-space:pre-wrap;border-top:1px solid var(--line);padding-top:17px;margin-top:22px">${e(assignment.instructions)}</p>` : ""}</section>`;
+  root.innerHTML = `<div class="practice-heading"><div><button class="text-btn" id="back-to-work">← My assignments</button><h1>${e(assignment.title)}</h1><p class="muted">${e(assignment.className)} ${assignment.className ? "·" : ""} ${assignment.repetitions} repetitions per character</p></div><span class="badge">${assignment.mode === "write" ? "Write from memory" : "Guided tracing"}</span></div><section class="panel"><div class="panel-heading"><span class="muted" id="practice-total" style="font-size:11px">${p.done} / ${p.target} repetitions recorded</span><span class="badge ${enrollment.status === "submitted" ? "" : "gray"}" id="submission-label">${enrollment.status === "submitted" ? "Submitted" : "In progress"}</span></div><div class="mode-switch" role="group" aria-label="Practice view"><button id="watch-mode">▷ Watch</button><button id="practice-mode">✎ ${assignment.mode === "write" ? "Write" : "Trace"} & record</button></div><div class="practice-layout"><div class="practice-canvas"><div class="board" id="practice-board" aria-label="Handwriting area"><svg class="grid-svg" viewBox="0 0 360 360" aria-hidden="true"><path d="M180 0v360M0 180h360M0 0l360 360M360 0 0 360"/></svg><div id="writer-target"></div><div id="board-message">Preparing practice…</div></div><nav class="char-nav" aria-label="Character navigation"><button class="btn" id="prev-char" aria-label="Previous character">←</button><div id="practice-characters" class="character-list"></div><button class="btn" id="next-char" aria-label="Next character">→</button></nav></div><div class="practice-side"><div class="practice-count"><span class="practice-current" id="practice-character"></span><div><strong id="repetition-count"></strong><small>recorded repetitions</small></div></div><section id="character-info" class="character-info" aria-label="Pinyin and Vietnamese meaning" aria-live="polite"></section><progress id="repetition-progress" aria-label="Repetitions completed"></progress><div class="practice-facts"><div><strong id="stroke-counter">0 / –</strong><span>strokes</span></div><div><strong id="practice-mistakes">0</strong><span>try-agains</span></div></div><button id="play-strokes" class="btn primary">▷ Play stroke order</button><button id="redo-repetition" class="btn">↺ Redo repetition</button><button id="repeat-character" class="btn primary" hidden>Next repetition →</button><button id="retry-record" class="btn primary" hidden>Retry saving this repetition</button><button id="submit-work" class="btn primary">Submit assignment</button><div class="practice-feedback" id="practice-feedback" role="status" aria-live="polite"></div></div></div>${assignment.instructions ? `<p class="muted" style="white-space:pre-wrap;border-top:1px solid var(--line);padding-top:17px;margin-top:22px">${e(assignment.instructions)}</p>` : ""}</section>`;
   const $ = (id) => root.querySelector(`#${id}`);
   const feedback = (message) => ($("practice-feedback").textContent = message);
   function update() {
@@ -128,8 +129,36 @@ export async function mountPractice(root, assignment, enrollment, api) {
       update();
     }
   }
+  async function showCharacterInfo(char, generation) {
+    const info = $("character-info");
+    info.innerHTML = '<span class="muted">Loading pinyin & meaning…</span>';
+    try {
+      const entries = await (api.lookupCharacter || lookupCharacter)(char);
+      if (generation !== revision) return;
+      if (!entries.length) {
+        info.innerHTML =
+          '<span class="muted">No dictionary entry for this character yet.</span>';
+        return;
+      }
+      const summary = (entry) =>
+        [...new Set(entry.meanings.map((text) => text.split(" (")[0].trim()))]
+          .slice(0, 2)
+          .join("; ");
+      const row = (entry, full = false) =>
+        `<div class="character-gloss"><strong lang="zh-Latn" aria-label="Pinyin">${e(entry.pinyin)}</strong><span lang="vi" aria-label="Vietnamese meaning">${e(full ? entry.meanings.join("; ") : summary(entry))}</span></div>`;
+      info.innerHTML = `<div class="character-info-label">Pinyin · Tiếng Việt</div>${row(entries[0])}<details class="character-definitions"><summary>More readings & meanings</summary>${entries.map((entry) => row(entry, true)).join("")}<small>Dictionary meanings vary by context. <a href="https://github.com/kemonra/CVDICT" target="_blank" rel="noopener noreferrer">CVDICT · Phong Phan</a> · <a href="${import.meta.env?.BASE_URL || "/"}data/character-dictionary/NOTICE.txt" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a></small></details>`;
+    } catch {
+      if (generation === revision)
+        info.innerHTML =
+          '<span class="muted">Pinyin & meaning could not be loaded.</span> <button type="button" class="text-btn" id="retry-dictionary">Retry</button>';
+      const retry = $("retry-dictionary");
+      if (generation === revision && retry)
+        retry.onclick = () => showCharacterInfo(char, generation);
+    }
+  }
   async function prepare({ restart = false } = {}) {
     const generation = ++revision;
+    showCharacterInfo(assignment.characters[index], generation);
     loading = true;
     attemptId = null;
     paths = [];

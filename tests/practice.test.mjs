@@ -103,6 +103,31 @@ after(() => {
   cleanupPractice();
   dom.window.close();
 });
+test("dictionary lookup does not block writing and stale results cannot overwrite the next character", async () => {
+  let resolveFirst;
+  const first = new Promise((resolve) => {
+    resolveFirst = resolve;
+  });
+  const s = setup("你", {
+    lookupCharacter: (char) =>
+      char === "你"
+        ? first
+        : Promise.resolve([{ pinyin: "èr", meanings: ["hai"] }]),
+  });
+  s.assignment.characters = ["你", "二"];
+  s.enrollment.characters = ["你", "二"];
+  s.enrollment.counts = [0, 0];
+  await mountPractice(root, s.assignment, s.enrollment, s.api);
+  assert.equal(root.querySelector("#redo-repetition").disabled, false);
+  root.querySelector("#next-char").click();
+  await waitFor(() =>
+    root.querySelector("#character-info").textContent.includes("hai"),
+  );
+  resolveFirst([{ pinyin: "nǐ", meanings: ["bạn"] }]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(root.querySelector("#character-info").textContent, /èr/);
+  assert.doesNotMatch(root.querySelector("#character-info").textContent, /bạn/);
+});
 test("real writer stroke callbacks save a completed character and update repetitions", async () => {
   const s = setup();
   await mountPractice(root, s.assignment, s.enrollment, s.api);
