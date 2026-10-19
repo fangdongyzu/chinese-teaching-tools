@@ -55,7 +55,7 @@ Counts, mistake totals, and elapsed-time totals are browser-reported. Server tim
 
 ## Development
 
-Requires Node.js 22.12+ and npm. Java 21 is needed for Firestore emulator tests.
+Requires Node.js 22.13+ and npm. Java 21 is needed for Firestore emulator tests.
 
 ```sh
 npm ci

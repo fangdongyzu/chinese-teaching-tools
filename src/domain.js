@@ -1,3 +1,4 @@
+import { matchesStroke } from "./handwriting-match.js";
 class ValidationError extends Error {
   constructor(message, code = "invalid-argument") {
     super(message);
@@ -99,7 +100,7 @@ function validateAttempt(char, paths, data) {
   if (!Array.isArray(paths) || paths.length !== data.medians.length)
     fail("Complete every stroke in order before saving.");
   const normalized = paths.map((path, index) => {
-    if (!Array.isArray(path) || path.length < 2 || path.length > 512)
+    if (!Array.isArray(path) || path.length < 2 || path.length > 4096)
       fail("Invalid stroke path.");
     if (
       path.some(
@@ -110,33 +111,17 @@ function validateAttempt(char, paths, data) {
             (v) =>
               typeof v !== "number" ||
               !Number.isFinite(v) ||
-              v < -200 ||
-              v > 1250,
+              v < -1024 ||
+              v > 2048,
           ),
       )
     )
       fail("Invalid stroke coordinates.");
-    const actual = resample(path);
-    const target = resample(data.medians[index]);
-    const expectedLength = pathLength(target);
-    const drawnLength = pathLength(path);
-    const tolerance = Math.max(85, Math.min(145, expectedLength * 0.2));
-    // Compare paths in their original order. Reversing or rearranging strokes fails.
-    if (
-      distance(actual[0], target[0]) > 165 ||
-      distance(actual.at(-1), target.at(-1)) > 165
-    )
-      fail(`Stroke ${index + 1} has the wrong position or direction.`);
-    const fit =
-      actual.reduce((sum, p, i) => sum + distance(p, target[i]), 0) /
-      actual.length;
-    if (
-      fit > tolerance ||
-      drawnLength < expectedLength * 0.45 ||
-      drawnLength > expectedLength * 2.4
-    )
+    // Use the writing box's matcher, including its order and direction checks.
+    // A second, stricter geometry check used to reject already accepted strokes.
+    if (!matchesStroke(path, data, index))
       fail(`Stroke ${index + 1} does not match the required stroke.`);
-    return actual.map((p) => p.map(Math.round));
+    return resample(path).map((p) => p.map(Math.round));
   });
   return {
     strokes: normalized,

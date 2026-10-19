@@ -309,6 +309,59 @@ test("closed assignments reject new work", async () => {
   );
 });
 
+test("Redo abandons the unfinished attempt, preserves counts, and records fresh writing", async () => {
+  const a = await owner.store.call("createAssignment", {
+    ...details,
+    title: "Redo practice",
+  });
+  await alice.call("joinAssignment", { code: a.code });
+  const input = { assignmentId: a.assignmentId, characterIndex: 0 };
+  const first = await alice.call("beginAttempt", input);
+  const redo = await alice.call("beginAttempt", { ...input, restart: true });
+  assert.notEqual(first.attemptId, redo.attemptId);
+  assert.equal(
+    (await getDoc(doc(aliceDb, "attempts", first.attemptId))).data().status,
+    "abandoned",
+  );
+  const paths = (await loadData("一")).medians.map((p) =>
+    p.map(([x, y]) => [x + 170, y]),
+  );
+  await assert.rejects(
+    alice.call("completeAttempt", {
+      attemptId: first.attemptId,
+      paths,
+      mistakes: 0,
+    }),
+    /no longer active/,
+  );
+  assert.deepEqual(
+    (
+      await alice.call("completeAttempt", {
+        attemptId: redo.attemptId,
+        paths,
+        mistakes: 0,
+      })
+    ).counts,
+    [1],
+  );
+  const next = await alice.call("beginAttempt", { ...input, restart: true });
+  const member = await getDoc(
+    doc(aliceDb, "enrollments", `${a.assignmentId}_alice`),
+  );
+  assert.equal(member.data().counts.一, 1);
+  assert.equal(member.data().activeAttemptId, next.attemptId);
+  assert.deepEqual(
+    (
+      await alice.call("completeAttempt", {
+        attemptId: next.attemptId,
+        paths: paths.map((p) => p.map(([x, y]) => [x + 3, y])),
+        mistakes: 0,
+      })
+    ).counts,
+    [2],
+  );
+});
+
 test("an atomic batch cannot count more than one repetition for one attempt", async () => {
   const a = await owner.store.call("createAssignment", {
     ...details,

@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/domain.test.mjs",
+    "test": "node --test tests/domain.test.mjs tests/practice.test.mjs",
     "test:rules": "firebase emulators:exec --project demo-teaching-tools --only firestore \"node --test tests/spark.test.mjs\"",
     "deploy": "node scripts/deploy.mjs",
     "test:emulator": "firebase emulators:exec --project demo-teaching-tools --only firestore \"node --test tests/spark.test.mjs\""
@@ -17,14 +17,15 @@
     "hanzi-writer": "3.7.3"
   },
   "devDependencies": {
-    "vite": "^7.1.0",
+    "@firebase/rules-unit-testing": "^5.0.0",
     "firebase-tools": "15.34.0",
-    "@firebase/rules-unit-testing": "^5.0.0"
+    "jsdom": "^29.1.1",
+    "vite": "^7.1.0"
   },
   "overrides": {
     "@grpc/grpc-js": "^1.13.6"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   }
 }

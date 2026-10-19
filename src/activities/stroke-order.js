@@ -39,10 +39,11 @@ export async function mountPractice(root, assignment, enrollment, api) {
     mistakes = 0,
     pending = false,
     completePaths = false,
+    recorded = false,
     data = null,
     loading = false;
   const p = progress(enrollment);
-  root.innerHTML = `<div class="practice-heading"><div><button class="text-btn" id="back-to-work">← My assignments</button><h1>${e(assignment.title)}</h1><p class="muted">${e(assignment.className)} ${assignment.className ? "·" : ""} ${assignment.repetitions} repetitions per character</p></div><span class="badge">${assignment.mode === "write" ? "Write from memory" : "Guided tracing"}</span></div><section class="panel"><div class="panel-heading"><span class="muted" id="practice-total" style="font-size:11px">${p.done} / ${p.target} repetitions recorded</span><span class="badge ${enrollment.status === "submitted" ? "" : "gray"}" id="submission-label">${enrollment.status === "submitted" ? "Submitted" : "In progress"}</span></div><div class="mode-switch" role="group" aria-label="Practice view"><button id="watch-mode">▷ Watch</button><button id="practice-mode">✎ ${assignment.mode === "write" ? "Write" : "Trace"} & record</button></div><div class="practice-layout"><div class="practice-canvas"><div class="board" id="practice-board" aria-label="Handwriting area"><svg class="grid-svg" viewBox="0 0 360 360" aria-hidden="true"><path d="M180 0v360M0 180h360M0 0l360 360M360 0 0 360"/></svg><div id="writer-target"></div><div id="board-message">Preparing practice…</div></div><nav class="char-nav" aria-label="Character navigation"><button class="btn" id="prev-char" aria-label="Previous character">←</button><div id="practice-characters" class="character-list"></div><button class="btn" id="next-char" aria-label="Next character">→</button></nav></div><div class="practice-side"><div class="practice-count"><span class="practice-current" id="practice-character"></span><div><strong id="repetition-count"></strong><small>recorded repetitions</small></div></div><progress id="repetition-progress" aria-label="Repetitions completed"></progress><div class="practice-facts"><div><strong id="stroke-counter">0 / –</strong><span>strokes</span></div><div><strong id="practice-mistakes">0</strong><span>try-agains</span></div></div><button id="play-strokes" class="btn primary">▷ Play stroke order</button><button id="repeat-character" class="btn">↺ Restart this repetition</button><button id="retry-record" class="btn primary" hidden>Retry saving this repetition</button><button id="submit-work" class="btn primary">Submit assignment</button><div class="practice-feedback" id="practice-feedback" role="status" aria-live="polite"></div></div></div>${assignment.instructions ? `<p class="muted" style="white-space:pre-wrap;border-top:1px solid var(--line);padding-top:17px;margin-top:22px">${e(assignment.instructions)}</p>` : ""}</section>`;
+  root.innerHTML = `<div class="practice-heading"><div><button class="text-btn" id="back-to-work">← My assignments</button><h1>${e(assignment.title)}</h1><p class="muted">${e(assignment.className)} ${assignment.className ? "·" : ""} ${assignment.repetitions} repetitions per character</p></div><span class="badge">${assignment.mode === "write" ? "Write from memory" : "Guided tracing"}</span></div><section class="panel"><div class="panel-heading"><span class="muted" id="practice-total" style="font-size:11px">${p.done} / ${p.target} repetitions recorded</span><span class="badge ${enrollment.status === "submitted" ? "" : "gray"}" id="submission-label">${enrollment.status === "submitted" ? "Submitted" : "In progress"}</span></div><div class="mode-switch" role="group" aria-label="Practice view"><button id="watch-mode">▷ Watch</button><button id="practice-mode">✎ ${assignment.mode === "write" ? "Write" : "Trace"} & record</button></div><div class="practice-layout"><div class="practice-canvas"><div class="board" id="practice-board" aria-label="Handwriting area"><svg class="grid-svg" viewBox="0 0 360 360" aria-hidden="true"><path d="M180 0v360M0 180h360M0 0l360 360M360 0 0 360"/></svg><div id="writer-target"></div><div id="board-message">Preparing practice…</div></div><nav class="char-nav" aria-label="Character navigation"><button class="btn" id="prev-char" aria-label="Previous character">←</button><div id="practice-characters" class="character-list"></div><button class="btn" id="next-char" aria-label="Next character">→</button></nav></div><div class="practice-side"><div class="practice-count"><span class="practice-current" id="practice-character"></span><div><strong id="repetition-count"></strong><small>recorded repetitions</small></div></div><progress id="repetition-progress" aria-label="Repetitions completed"></progress><div class="practice-facts"><div><strong id="stroke-counter">0 / –</strong><span>strokes</span></div><div><strong id="practice-mistakes">0</strong><span>try-agains</span></div></div><button id="play-strokes" class="btn primary">▷ Play stroke order</button><button id="redo-repetition" class="btn">↺ Redo repetition</button><button id="repeat-character" class="btn primary" hidden>Next repetition →</button><button id="retry-record" class="btn primary" hidden>Retry saving this repetition</button><button id="submit-work" class="btn primary">Submit assignment</button><div class="practice-feedback" id="practice-feedback" role="status" aria-live="polite"></div></div></div>${assignment.instructions ? `<p class="muted" style="white-space:pre-wrap;border-top:1px solid var(--line);padding-top:17px;margin-top:22px">${e(assignment.instructions)}</p>` : ""}</section>`;
   const $ = (id) => root.querySelector(`#${id}`);
   const feedback = (message) => ($("practice-feedback").textContent = message);
   function update() {
@@ -70,8 +71,13 @@ export async function mountPractice(root, assignment, enrollment, api) {
       pending || loading || enrollment.status === "submitted";
     $("watch-mode").disabled = pending || loading;
     $("play-strokes").hidden = !watch;
-    $("repeat-character").hidden =
-      watch || enrollment.counts[index] >= assignment.repetitions;
+    const canPractice =
+      !watch &&
+      enrollment.status !== "submitted" &&
+      enrollment.counts[index] < assignment.repetitions;
+    $("redo-repetition").hidden = !canPractice || recorded;
+    $("redo-repetition").disabled = pending || loading;
+    $("repeat-character").hidden = !canPractice || !recorded;
     $("repeat-character").disabled = pending || loading;
     $("practice-characters").innerHTML = assignment.characters
       .map(
@@ -102,16 +108,18 @@ export async function mountPractice(root, assignment, enrollment, api) {
         mistakes,
       });
       enrollment.counts = result.counts;
+      recorded = true;
       attemptId = null;
       completePaths = false;
       feedback(
         `✓ Repetition ${enrollment.counts[savedIndex]} of ${assignment.repetitions} recorded. ${enrollment.counts.every((c) => c >= assignment.repetitions) ? "Every character is complete. Submit your assignment when ready." : "Continue with another repetition."}`,
       );
-      $("repeat-character").textContent =
-        enrollment.counts[savedIndex] < assignment.repetitions
-          ? "Continue: next repetition"
-          : "↺ Restart this repetition";
-      await api.refresh();
+      // Saving succeeded even if a later dashboard refresh has a network error.
+      try {
+        await api.refresh();
+      } catch {
+        /* Keep the confirmed count visible. */
+      }
     } catch (error) {
       feedback(errorMessage(error));
       $("retry-record").hidden = false;
@@ -120,13 +128,14 @@ export async function mountPractice(root, assignment, enrollment, api) {
       update();
     }
   }
-  async function prepare() {
+  async function prepare({ restart = false } = {}) {
     const generation = ++revision;
     loading = true;
     attemptId = null;
     paths = [];
     mistakes = 0;
     completePaths = false;
+    recorded = false;
     data = null;
     if (engine) {
       engine.writer.cancelQuiz();
@@ -138,7 +147,6 @@ export async function mountPractice(root, assignment, enrollment, api) {
     $("board-message").textContent = "Preparing practice…";
     $("practice-mistakes").textContent = "0";
     $("stroke-counter").textContent = "0 / –";
-    $("repeat-character").textContent = "↺ Restart this repetition";
     try {
       data = await loadData(assignment.characters[index]);
       if (generation !== revision) return;
@@ -197,10 +205,11 @@ export async function mountPractice(root, assignment, enrollment, api) {
           const attempt = await api.call("beginAttempt", {
             assignmentId: assignment.id,
             characterIndex: index,
+            restart,
           });
           if (generation !== revision) return;
           attemptId = attempt.attemptId;
-          engine.writer.quiz({
+          await engine.writer.quiz({
             showHintAfterMisses: assignment.mode === "trace" ? 2 : false,
             acceptBackwardsStrokes: false,
             markStrokeCorrectAfterMisses: false,
@@ -208,14 +217,9 @@ export async function mountPractice(root, assignment, enrollment, api) {
             onCorrectStroke(result) {
               if (generation !== revision) return;
               const raw = result.drawnPath.points;
-              const sampled =
-                raw.length > 384
-                  ? Array.from(
-                      { length: 384 },
-                      (_, i) => raw[Math.round((i * (raw.length - 1)) / 383)],
-                    )
-                  : raw;
-              paths[result.strokeNum] = sampled.map((p) => [p.x, p.y]);
+              // Preserve the path the quiz actually accepted. Downsampling before
+              // validation can change curved strokes and reject completed writing.
+              paths[result.strokeNum] = raw.map((p) => [p.x, p.y]);
               $("stroke-counter").textContent =
                 `${result.strokeNum + 1} / ${data.strokes.length}`;
               feedback(
@@ -251,7 +255,7 @@ export async function mountPractice(root, assignment, enrollment, api) {
     } catch (error) {
       if (generation !== revision) return;
       $("board-message").textContent = errorMessage(error);
-      feedback("Use Restart to retry, or return to your assignments.");
+      feedback("Use Redo to retry, or return to your assignments.");
     } finally {
       if (generation === revision) {
         loading = false;
@@ -289,6 +293,7 @@ export async function mountPractice(root, assignment, enrollment, api) {
   $("play-strokes").onclick = () => {
     if (engine && data) engine.writer.animateCharacter();
   };
+  $("redo-repetition").onclick = () => prepare({ restart: true });
   $("repeat-character").onclick = () => prepare();
   $("retry-record").onclick = () => record();
   $("back-to-work").onclick = () => {

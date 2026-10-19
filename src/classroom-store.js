@@ -247,6 +247,7 @@ export function createClassroomStore({
       if (
         old?.exists() &&
         old.data().status === "started" &&
+        input.restart !== true &&
         old.data().characterIndex === index &&
         Date.now() - time(old.data().startedAt) < 1800000
       )
