@@ -1,4 +1,4 @@
-# Chinese Teaching Tools · Practice Classroom (Spark edition)
+# Chinese Teaching and Learning Tools · Practice Classroom (Spark edition)
 
 A modular classroom for Chinese teaching activities, assignments, recorded handwriting practice, and student submissions. This version uses **Firebase's free Spark plan**: Google Authentication, Firestore, and static Firebase Hosting. **No Cloud Functions, billing account, or Blaze activation is required.** Spark usage quotas still apply.
 

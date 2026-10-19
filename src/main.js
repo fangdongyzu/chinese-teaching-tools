@@ -61,7 +61,7 @@ const button = (label, action, id = "", classes = "") =>
 const badge = (a) =>
   `<span class="badge ${a.status === "closed" || hasExpired(a) ? "gray" : ""}">${hasExpired(a) ? "Past due" : a.status === "closed" ? "Closed" : "Open"}</span>`;
 function header() {
-  return `<header><a class="brand" href="./"><span class="seal" lang="zh">課</span><span>practice classroom<small>CHINESE TEACHING TOOLS</small></span></a><div class="account">${state.profile ? `<div class="account-info">${e(state.profile.name)}<span>${e(state.profile.email)}</span></div><span class="badge gray">${teacherView() ? "Teacher" : "Student"}</span>${button("Sign out", "logout", "", "small")}` : button('<span class="google-g">G</span> Sign in with Google', "login", "", "primary")}</div></header>`;
+  return `<header><a class="brand" href="./"><span class="seal" lang="zh">課</span><span>practice classroom<small>CHINESE TEACHING AND LEARNING TOOLS</small></span></a><div class="account">${state.profile ? `<div class="account-info">${e(state.profile.name)}<span>${e(state.profile.email)}</span></div><span class="badge gray">${teacherView() ? "Teacher" : "Student"}</span>${button("Sign out", "logout", "", "small")}` : button('<span class="google-g">G</span> Sign in with Google', "login", "", "primary")}</div></header>`;
 }
 function navigation() {
   const rows = teacherView()
