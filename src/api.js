@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
+  getRedirectResult,
   onAuthStateChanged,
   signOut,
   connectAuthEmulator,
@@ -11,6 +12,7 @@ import {
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
 import { createClassroomStore } from "./classroom-store.js";
+import { createSignInFlow } from "./sign-in.js";
 export { enrollmentRecord } from "./classroom-store.js";
 export const configured = Boolean(
   firebaseConfig?.projectId && firebaseConfig?.apiKey,
@@ -31,17 +33,29 @@ if (
 }
 export const observeAuth = (handler) =>
   auth ? onAuthStateChanged(auth, handler) : handler(null);
-export async function login() {
+function provider() {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
-  try {
-    return await signInWithPopup(auth, provider);
-  } catch (e) {
-    if (e.code === "auth/popup-blocked")
-      return signInWithRedirect(auth, provider);
-    throw e;
-  }
+  return provider;
 }
+const signIn = auth
+  ? createSignInFlow({
+      authDomain: firebaseConfig.authDomain,
+      location: window.location,
+      history: window.history,
+      storage: () => window.sessionStorage,
+      userAgent: navigator.userAgent,
+      popup: () => signInWithPopup(auth, provider()),
+      redirect: () => signInWithRedirect(auth, provider()),
+      redirectResult: () => getRedirectResult(auth),
+      authReady: () => auth.authStateReady(),
+      currentUser: () => auth.currentUser,
+      local:
+        import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === "true",
+    })
+  : null;
+export const login = () => signIn.login();
+export const finishSignIn = async () => signIn?.finish();
 export const logout = () => signOut(auth);
 export async function call(name, data = {}) {
   if (!classroom) throw new Error("Firebase setup is not complete yet.");

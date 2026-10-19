@@ -1376,3 +1376,34 @@ dialog::backdrop {
     scroll-behavior: auto !important;
   }
 }
+
+.auth-help {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 520px;
+}
+.auth-help strong {
+  display: block;
+}
+.landing .auth-help p {
+  font-size: 12px;
+  margin: 8px 0 14px;
+}
+.auth-help label {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.auth-help input {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+}
+.auth-help .btn {
+  margin-top: 10px;
+}

@@ -109,3 +109,9 @@ Hanzi Writer 3.7.3 is MIT-licensed. Hanzi Writer Data 2.0.1 derives from Make Me
 ### Character pronunciation and Vietnamese meanings
 
 The practice panel shows tone-marked Mandarin pinyin and Vietnamese dictionary glosses for the selected character. “More readings & meanings” shows alternate pronunciations and full definitions. Both traditional and simplified forms are indexed (14,559 characters). Dictionary files are served with the site in small cached chunks; no translation API or paid Firebase feature is used. Missing entries or a temporary dictionary error do not block writing practice. Source and license: `public/data/character-dictionary/NOTICE.txt`.
+
+### Phone sign-in
+
+On phones, sign-in first opens the matching Firebase Hosting domain, `https://chinese-teaching-tools.firebaseapp.com/`, before redirecting to Google. This keeps the app and Firebase authentication helpers on the same origin and avoids partitioned-storage errors. Both Hosting aliases use the same project and Firestore database. Assignment-code links keep their code through the transition. Desktop popup sign-in remains available; blocked popups use the same safe route.
+
+Open links directly in Safari or Chrome. Known embedded app browsers (including LINE) show instructions instead of starting a Google sign-in they may not support. The classroom checks session storage before a redirect, explicitly handles redirect results, and shows recoverable errors. No browser privacy protections need to be disabled. Implementation reference: https://firebase.google.com/docs/auth/web/redirect-best-practices.

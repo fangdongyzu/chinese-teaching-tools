@@ -16,9 +16,17 @@ import {
   db,
   observeAuth,
   login,
+  finishSignIn,
   logout,
   call,
 } from "./api.js";
+import {
+  classroomSignInUrl,
+  isAppBrowser,
+  isPhoneBrowser,
+  signInError,
+} from "./sign-in.js";
+import { firebaseConfig } from "./firebase-config.js";
 import { ACTIVITIES, activityName } from "./activities.js";
 import {
   escape as e,
@@ -48,6 +56,7 @@ const state = {
   loading: true,
   practice: null,
   error: "",
+  signingIn: false,
   unsub: [],
 };
 const isTeacher = () =>
@@ -57,7 +66,7 @@ const personal = () =>
   state.enrollments.filter((r) => r.userId === state.user?.uid);
 const hasExpired = (a) => a.dueAt && timeValue(a.dueAt) < Date.now();
 const button = (label, action, id = "", classes = "") =>
-  `<button class="btn ${classes}" data-action="${action}" ${id ? `data-id="${e(id)}"` : ""} ${action === "login" && !configured ? "disabled" : ""}>${label}</button>`;
+  `<button class="btn ${classes}" data-action="${action}" ${id ? `data-id="${e(id)}"` : ""} ${action === "login" && (!configured || state.signingIn) ? "disabled" : ""}>${action === "login" && state.signingIn ? "Opening Google…" : label}</button>`;
 const badge = (a) =>
   `<span class="badge ${a.status === "closed" || hasExpired(a) ? "gray" : ""}">${hasExpired(a) ? "Past due" : a.status === "closed" ? "Closed" : "Open"}</span>`;
 function header() {
@@ -76,8 +85,18 @@ function navigation() {
 function shell(content) {
   return `<div class="shell">${header()}${preview ? `<div class="banner preview"><span>Interface preview · sample data · no real accounts or results</span><a href="./">Exit preview</a></div>` : ""}${state.profile ? `<div class="workspace">${navigation()}<main class="main" id="main-content">${content}</main></div>` : `<main>${content}</main>`}<footer class="footer"><span>Practice Classroom · Learn through practice.</span><span>Google sign-in · Firebase</span></footer></div>`;
 }
+function phoneSignInHelp() {
+  if (
+    !isPhoneBrowser(navigator.userAgent) &&
+    !isAppBrowser(navigator.userAgent) &&
+    !state.error
+  )
+    return "";
+  const url = classroomSignInUrl(location.href, firebaseConfig.authDomain);
+  return `<div class="auth-help"><strong>Signing in on your phone</strong><p>Open the classroom directly in Safari or Chrome. If the link opened inside LINE or another app, use its menu to open it in your browser. Start from this classroom link, rather than an old Google sign-in tab.</p><label for="classroom-signin-link">Classroom link</label><input id="classroom-signin-link" readonly value="${e(url)}" aria-label="Classroom link"><button class="btn small" data-action="copy-signin-link">Copy classroom link</button></div>`;
+}
 function landing() {
-  return `<section class="landing"><div class="landing-content"><div><div class="eyebrow">YOUR WORDS. THEIR PRACTICE.</div><h1>A little practice.<br>Progress you can see.</h1><p>A classroom for Chinese assignments. Teachers set the task; students practice each character and submit their recorded results.</p>${button('<span class="google-g">G</span> Continue with Google', "login", "", "primary")}<p class="login-caption">Use your teacher or student Google account.<br>Your teacher shares an assignment code to get you started.</p>${!configured ? '<div class="banner">Firebase configuration is not complete yet.</div>' : ""}${state.error ? `<div class="banner">${e(state.error)}</div>` : ""}</div><div class="login-panel"><div class="paper-mark" lang="zh">學 習</div><ul><li><span>01</span> Your teacher assigns text and a practice target.</li><li><span>02</span> Write each character the required number of times.</li><li><span>03</span> Submit your results for your teacher to review.</li></ul></div></div></section>`;
+  return `<section class="landing"><div class="landing-content"><div><div class="eyebrow">YOUR WORDS. THEIR PRACTICE.</div><h1>A little practice.<br>Progress you can see.</h1><p>A classroom for Chinese assignments. Teachers set the task; students practice each character and submit their recorded results.</p>${button('<span class="google-g">G</span> Continue with Google', "login", "", "primary")}<p class="login-caption">Use your teacher or student Google account.<br>Your teacher shares an assignment code to get you started.</p>${!configured ? '<div class="banner">Firebase configuration is not complete yet.</div>' : ""}${state.error ? `<div class="banner" role="alert">${e(state.error)}</div>` : ""}${phoneSignInHelp()}</div><div class="login-panel"><div class="paper-mark" lang="zh">學 習</div><ul><li><span>01</span> Your teacher assigns text and a practice target.</li><li><span>02</span> Write each character the required number of times.</li><li><span>03</span> Submit your results for your teacher to review.</li></ul></div></div></section>`;
 }
 function teacherAssignments() {
   const submissions = state.enrollments.filter(
@@ -222,7 +241,7 @@ async function bootstrap(user) {
   state.user = user;
   state.profile = null;
   state.loading = Boolean(user);
-  state.error = "";
+  if (user) state.error = "";
   state.practice = null;
   stopListeners();
   render();
@@ -449,7 +468,27 @@ async function action(event) {
   try {
     if (name === "login") {
       if (!configured) throw new Error("Firebase setup is not complete.");
-      await login();
+      state.signingIn = true;
+      state.error = "";
+      render();
+      try {
+        await login();
+      } catch (error) {
+        state.error = signInError(error);
+      } finally {
+        state.signingIn = false;
+        if (!state.profile) render();
+      }
+    } else if (name === "copy-signin-link") {
+      const link = document.getElementById("classroom-signin-link");
+      try {
+        await navigator.clipboard.writeText(link.value);
+        toast("Classroom link copied. Open it in Safari or Chrome.");
+      } catch {
+        link.focus();
+        link.select();
+        toast("Press and hold the selected link to copy it.");
+      }
     } else if (name === "logout") {
       cleanupPractice();
       state.practice = null;
@@ -619,4 +658,8 @@ if (preview) {
 } else {
   render();
   observeAuth(bootstrap);
+  finishSignIn().catch((error) => {
+    state.error = signInError(error);
+    if (!state.profile) render();
+  });
 }
