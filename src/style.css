@@ -736,6 +736,10 @@ dialog::backdrop {
   width: 100%;
   margin-top: 12px;
 }
+.redo-repetition-button {
+  width: 100%;
+  margin-top: 9px;
+}
 .grid-svg {
   position: absolute;
   inset: 0;
