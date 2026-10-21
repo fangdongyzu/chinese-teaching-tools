@@ -102,6 +102,7 @@ export async function mountPractice(root, assignment, enrollment, api) {
     $("retry-record").hidden = true;
     feedback("Checking strokes and saving your repetition…");
     const savedIndex = index;
+    let restartExpiredAttempt = false;
     try {
       const result = await api.call("completeAttempt", {
         attemptId,
@@ -122,12 +123,23 @@ export async function mountPractice(root, assignment, enrollment, api) {
         /* Keep the confirmed count visible. */
       }
     } catch (error) {
-      feedback(errorMessage(error));
-      $("retry-record").hidden = false;
+      const message = errorMessage(error);
+      if (/attempt expired|attempt is no longer active/i.test(message)) {
+        // An expired attempt can never be saved, so retrying it only traps the
+        // student in the same error. Start a clean repetition instead.
+        feedback(
+          "This repetition timed out and was not counted. Starting a new repetition…",
+        );
+        restartExpiredAttempt = true;
+      } else {
+        feedback(message);
+        $("retry-record").hidden = false;
+      }
     } finally {
       pending = false;
       update();
     }
+    if (restartExpiredAttempt) await prepare({ restart: true });
   }
   async function showCharacterInfo(char, generation) {
     const info = $("character-info");
