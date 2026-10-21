@@ -103,6 +103,7 @@ export async function mountPractice(root, assignment, enrollment, api) {
     feedback("Checking strokes and saving your repetition…");
     const savedIndex = index;
     let restartExpiredAttempt = false;
+    let nextPracticeIndex = null;
     try {
       const result = await api.call("completeAttempt", {
         attemptId,
@@ -113,6 +114,17 @@ export async function mountPractice(root, assignment, enrollment, api) {
       recorded = true;
       attemptId = null;
       completePaths = false;
+      if (enrollment.counts[savedIndex] < assignment.repetitions) {
+        nextPracticeIndex = savedIndex;
+      } else {
+        for (let offset = 1; offset < assignment.characters.length; offset++) {
+          const candidate = (savedIndex + offset) % assignment.characters.length;
+          if (enrollment.counts[candidate] < assignment.repetitions) {
+            nextPracticeIndex = candidate;
+            break;
+          }
+        }
+      }
       feedback(
         `✓ Repetition ${enrollment.counts[savedIndex]} of ${assignment.repetitions} recorded. ${enrollment.counts.every((c) => c >= assignment.repetitions) ? "Every character is complete. Submit your assignment when ready." : "Continue with another repetition."}`,
       );
@@ -140,6 +152,10 @@ export async function mountPractice(root, assignment, enrollment, api) {
       update();
     }
     if (restartExpiredAttempt) await prepare({ restart: true });
+    else if (nextPracticeIndex !== null) {
+      index = nextPracticeIndex;
+      await prepare();
+    }
   }
   async function showCharacterInfo(char, generation) {
     const info = $("character-info");

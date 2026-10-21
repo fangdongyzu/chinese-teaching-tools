@@ -182,6 +182,21 @@ export function createClassroomStore({
       return { status: input.status };
     });
   }
+  async function updateStudentName(input) {
+    const user = identity();
+    await requireTeacher(user);
+    const enrollmentId = recordId(input.enrollmentId);
+    const studentName = String(input.studentName || "").trim();
+    if (!studentName || studentName.length > 120)
+      fail("Enter a student name up to 120 characters.");
+    const ref = doc(db, "enrollments", enrollmentId);
+    return runTransaction(db, async (tx) => {
+      const snapshot = await tx.get(ref);
+      if (!snapshot.exists()) fail("Student assignment not found.");
+      tx.update(ref, { studentName, updatedAt: serverTimestamp() });
+      return { studentName };
+    });
+  }
   async function joinAssignment(input) {
     const user = identity();
     const code = String(input.code || "")
@@ -392,7 +407,7 @@ export function createClassroomStore({
         assignmentId,
         userId: user.uid,
         studentEmail: user.email,
-        studentName: user.name,
+        studentName: e.studentName,
         title: e.title,
         characters: e.characters,
         repetitions: e.repetitions,
@@ -417,6 +432,7 @@ export function createClassroomStore({
     setTeacherAccess,
     createAssignment,
     setAssignmentStatus,
+    updateStudentName,
     joinAssignment,
     beginAttempt,
     completeAttempt,

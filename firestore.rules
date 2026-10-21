@@ -125,12 +125,20 @@ service cloud.firestore {
           && resource.data.counts.values().hasOnly([resource.data.repetitions])
           && getAfter(/databases/$(database)/documents/submissions/$(enrollmentId)).data.submittedAt == request.time;
       }
+      function teacherNameTransition() {
+        let next = request.resource.data;
+        return next.diff(resource.data).affectedKeys().hasOnly(['studentName','updatedAt'])
+          && next.studentName is string && next.studentName.size() > 0 && next.studentName.size() <= 120
+          && next.studentName != resource.data.studentName
+          && next.updatedAt == request.time;
+      }
       allow get: if googleUser() && (!exists(/databases/$(database)/documents/enrollments/$(enrollmentId)) || selfRecord(resource.data) || teacher());
       allow list: if selfRecord(resource.data) || teacher();
       allow create: if googleUser() && validJoin();
-      allow update: if selfRecord(resource.data) && resource.data.status == 'in-progress'
+      allow update: if (selfRecord(resource.data) && resource.data.status == 'in-progress'
         && open(resource.data.assignmentId) && request.resource.data.updatedAt == request.time
-        && (startTransition() || countTransition() || submitTransition());
+        && (startTransition() || countTransition() || submitTransition()))
+        || (teacher() && teacherNameTransition());
       allow delete: if false;
       match /fingerprints/{hash} {
         function parent() { return get(/databases/$(database)/documents/enrollments/$(enrollmentId)).data; }

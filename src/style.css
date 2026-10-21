@@ -360,6 +360,11 @@ p {
 .table-wrap {
   overflow-x: auto;
 }
+.roster-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 table {
   border-collapse: collapse;
   width: 100%;
