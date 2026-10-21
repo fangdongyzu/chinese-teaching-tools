@@ -732,6 +732,10 @@ dialog::backdrop {
   overflow: hidden;
   border-radius: 3px;
 }
+.play-strokes-button {
+  width: 100%;
+  margin-top: 12px;
+}
 .grid-svg {
   position: absolute;
   inset: 0;
