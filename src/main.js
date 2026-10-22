@@ -147,7 +147,7 @@ function studentAssignments() {
         ? button("View results", "open-practice", r.assignmentId, "small")
         : graded && !practiceAllowed
           ? '<span class="muted" style="font-size:10px">Practice closed</span>'
-          : button(practiceAllowed ? "Redo practice ↗" : p.percent === 100 ? "Review & submit" : "Continue practice ↗", "open-practice", r.assignmentId, "small primary");
+          : button(p.percent === 100 ? "Review & submit" : "Continue practice ↗", "open-practice", r.assignmentId, "small primary");
       return `<section class="panel assignment-card"><div class="card-top"><span class="eyebrow" style="margin:0">筆順 · STROKE ORDER</span><div class="student-card-badges"><span class="badge ${graded || practiceAllowed || r.status === "submitted" ? "" : "gray"}">${status}</span>${graded ? `<span class="badge orange">Grade ${r.grade} / 100</span>` : ""}</div></div><div><h2>${e(r.title)}</h2><p class="muted">${e(r.className)} ${r.className ? "·" : ""} ${r.repetitions} repetitions per character</p></div><div class="character-preview" lang="zh">${e(r.characters.join(""))}</div><div><div class="progress-label"><span>${p.done} / ${p.target} repetitions</span><span>${p.percent}%</span></div><progress value="${p.done}" max="${p.target}" aria-label="${e(r.title)} progress"></progress></div><div class="card-bottom"><span class="muted" style="font-size:10px">${r.status === "submitted" ? "Submitted " + dateLabel(r.submittedAt) : a?.dueAt ? "Due " + dateLabel(a.dueAt) : "No due date"}</span>${action}</div></section>`;
     })
     .join(
