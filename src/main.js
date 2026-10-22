@@ -42,6 +42,7 @@ import { mountPractice, cleanupPractice } from "./activities/stroke-order.js";
 const app = document.getElementById("app"),
   dialog = document.getElementById("dialog");
 let subscriptionRevision = 0;
+const gradeSaveStates = new Map();
 const previewMode = new URLSearchParams(location.search).get("preview");
 const preview =
   import.meta.env.DEV && ["teacher", "student"].includes(previewMode);
@@ -386,7 +387,7 @@ async function reviewAssignment(id, controls = { status: "all", sort: "recorded"
         const p = progress(r);
         const studentStatus = r.status === "submitted" ? "Submitted" : r.grade != null ? r.practiceAllowed ? "Practice allowed" : "Graded · locked" : "Practicing";
         const practiceControl = r.grade == null ? "" : `<button class="btn small" data-action="set-practice-access" data-id="${e(r.id)}" data-enabled="${r.practiceAllowed === true ? "false" : "true"}">${r.practiceAllowed === true ? "Lock practice" : "Allow practice"}</button>`;
-        return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" || r.grade != null ? "" : "gray"}">${studentStatus}</span></td><td><div class="grade-entry"><input class="grade-input" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Grade for ${e(r.studentName)}" placeholder="—" value="${r.grade ?? ""}" data-grade-id="${e(r.id)}"><button class="btn small" data-action="save-grade" data-id="${e(r.id)}">Save</button></div></td><td><div class="roster-actions">${practiceControl}${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
+        return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" || r.grade != null ? "" : "gray"}">${studentStatus}</span></td><td><div class="grade-entry"><input class="grade-input" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Grade for ${e(r.studentName)}" placeholder="—" value="${r.grade ?? ""}" data-grade-id="${e(r.id)}"><small class="grade-save-state" data-grade-state="${e(r.id)}" aria-live="polite"></small></div></td><td><div class="roster-actions">${practiceControl}${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
       })
       .join(
         "",
@@ -394,6 +395,91 @@ async function reviewAssignment(id, controls = { status: "all", sort: "recorded"
   );
   dialog.querySelector("#roster-status").onchange = (event) => reviewAssignment(id, { ...controls, status: event.target.value });
   dialog.querySelector("#roster-sort").onchange = (event) => reviewAssignment(id, { ...controls, sort: event.target.value });
+  wireGradeAutosave(id, controls);
+}
+function gradeSaveStatus(id, message) {
+  const target = dialog.querySelector(`[data-grade-state="${CSS.escape(id)}"]`);
+  if (target) target.textContent = message;
+}
+function wireGradeAutosave(assignmentId, controls) {
+  dialog.querySelectorAll("[data-grade-id]").forEach((input) => {
+    const id = input.dataset.gradeId;
+    let save = gradeSaveStates.get(id);
+    if (!save) {
+      const value = input.value.trim();
+      save = { lastSavedValue: value, latestValue: value, timer: null, saving: false };
+      gradeSaveStates.set(id, save);
+    } else if (!save.saving && !save.timer && save.latestValue === save.lastSavedValue) {
+      save.latestValue = input.value.trim();
+    }
+    save.input = input;
+    save.assignmentId = assignmentId;
+    save.controls = controls;
+    if (save.latestValue !== save.lastSavedValue) input.value = save.latestValue;
+    const queueSave = (immediate = false) => {
+      save.latestValue = input.value.trim();
+      gradeSaveStatus(id, immediate ? "Saving…" : "Typing…");
+      clearTimeout(save.timer);
+      save.timer = setTimeout(() => commitGrade(id), immediate ? 0 : 650);
+    };
+    input.addEventListener("input", () => queueSave());
+    input.addEventListener("change", () => queueSave(true));
+    input.addEventListener("blur", () => queueSave(true));
+  });
+}
+async function commitGrade(id) {
+  const save = gradeSaveStates.get(id);
+  if (!save || save.saving) return;
+  clearTimeout(save.timer);
+  save.timer = null;
+  const input = save.input;
+  const value = save.latestValue;
+  if (input?.validity.badInput) {
+    gradeSaveStatus(id, "Enter a whole number");
+    return;
+  }
+  const grade = value === "" ? null : Number(value);
+  if (grade !== null && (!Number.isInteger(grade) || grade < 0 || grade > 100)) {
+    gradeSaveStatus(id, "Use 0–100");
+    return;
+  }
+  if (value === save.lastSavedValue) {
+    gradeSaveStatus(id, "Saved");
+    return;
+  }
+  const student = state.enrollments.find((record) => record.id === id);
+  if (!student) return;
+  const controls = {
+    status: dialog.querySelector("#roster-status")?.value || save.controls?.status || "all",
+    sort: dialog.querySelector("#roster-sort")?.value || save.controls?.sort || "recorded",
+  };
+  const restoreFocus = document.activeElement === input;
+  save.saving = true;
+  gradeSaveStatus(id, "Saving…");
+  try {
+    if (!preview) await call("updateStudentGrade", { enrollmentId: id, grade });
+    const gradedAt = grade === null ? null : Date.now();
+    state.enrollments = state.enrollments.map((record) => record.id === id
+      ? { ...record, grade, gradedAt, practiceAllowed: false }
+      : record);
+    save.lastSavedValue = value;
+    if (save.latestValue === value) save.latestValue = value;
+    await reviewAssignment(save.assignmentId, controls);
+    save.input = dialog.querySelector(`[data-grade-id="${CSS.escape(id)}"]`) || save.input;
+    if (restoreFocus) {
+      save.input.focus();
+    }
+    gradeSaveStatus(id, "Saved");
+  } catch (error) {
+    gradeSaveStatus(id, "Not saved");
+    toast(errorMessage(error), true);
+  } finally {
+    save.saving = false;
+    if (save.latestValue !== value && save.latestValue !== save.lastSavedValue) {
+      if (save.input) save.input.value = save.latestValue;
+      void commitGrade(id);
+    }
+  }
 }
 async function reviewStudent(id) {
   const r = state.enrollments.find((r) => r.id === id);
@@ -544,24 +630,6 @@ async function action(event) {
       toast("Assignment code copied.");
     } else if (name === "review-assignment") await reviewAssignment(id);
     else if (name === "review-student") await reviewStudent(id);
-    else if (name === "save-grade") {
-      const input = dialog.querySelector(`[data-grade-id="${CSS.escape(id)}"]`);
-      const value = input.value.trim();
-      const grade = value === "" ? null : Number(value);
-      if (grade !== null && (!Number.isInteger(grade) || grade < 0 || grade > 100))
-        throw new Error("Enter a whole-number grade from 0 to 100, or leave it blank.");
-      b.disabled = true;
-      if (!preview) await call("updateStudentGrade", { enrollmentId: id, grade });
-      const gradedAt = grade === null ? null : Date.now();
-      const assignmentId = state.enrollments.find((student) => student.id === id)?.assignmentId;
-      const controls = {
-        status: dialog.querySelector("#roster-status")?.value || "all",
-        sort: dialog.querySelector("#roster-sort")?.value || "recorded",
-      };
-      state.enrollments = state.enrollments.map((student) => student.id === id ? { ...student, grade, gradedAt, practiceAllowed: false } : student);
-      if (assignmentId) await reviewAssignment(assignmentId, controls);
-      toast(grade === null ? "Grade cleared." : "Grade saved.");
-    }
     else if (name === "set-practice-access") {
       if (preview) throw new Error("Sign in to change real student practice access.");
       const student = state.enrollments.find((record) => record.id === id);
