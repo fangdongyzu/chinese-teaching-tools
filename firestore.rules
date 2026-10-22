@@ -136,6 +136,7 @@ service cloud.firestore {
       allow list: if selfRecord(resource.data) || teacher();
       allow create: if googleUser() && validJoin();
       allow update: if (selfRecord(resource.data) && resource.data.status == 'in-progress'
+        && (!('grade' in resource.data) || resource.data.grade == null)
         && open(resource.data.assignmentId) && request.resource.data.updatedAt == request.time
         && (startTransition() || countTransition() || submitTransition()))
         || (teacher() && teacherGradeTransition());
@@ -159,6 +160,7 @@ service cloud.firestore {
         return r.keys().hasOnly(['assignmentId','userId','code','characterIndex','character','status','startedAt','endedAt','elapsedMs','mistakes','strokes','fingerprint','validationSource'])
           && r.userId == request.auth.uid && r.code == a.code && open(r.assignmentId)
           && m.userId == request.auth.uid && m.status == 'in-progress'
+          && (!('grade' in m) || m.grade == null)
           && r.characterIndex is int && r.characterIndex >= 0 && r.characterIndex < a.characters.size()
           && r.character == a.characters[r.characterIndex] && m.counts[r.character] < a.repetitions
           && r.status == 'started' && r.startedAt == request.time && r.endedAt == null
@@ -172,6 +174,7 @@ service cloud.firestore {
           && r.status == 'completed' && r.endedAt == request.time && open(resource.data.assignmentId)
           && request.time <= resource.data.startedAt + duration.value(30, 'm')
           && m.activeAttemptId == attemptId && m.status == 'in-progress'
+          && (!('grade' in m) || m.grade == null)
           && r.elapsedMs is int && r.elapsedMs >= 0 && r.elapsedMs <= 1800000
           && r.mistakes is int && r.mistakes >= 0 && r.mistakes <= 10000
           && r.strokes is list && r.strokes.size() == assignment(resource.data.assignmentId).strokeCounts[resource.data.character]
@@ -194,6 +197,7 @@ service cloud.firestore {
         return r.keys().hasOnly(['assignmentId','userId','studentEmail','studentName','title','characters','repetitions','counts','totalMistakes','totalElapsedMs','submittedAt','status','validationSource'])
           && submissionId == r.assignmentId + '_' + request.auth.uid && r.userId == request.auth.uid
           && open(r.assignmentId) && m.userId == request.auth.uid && m.status == 'in-progress'
+          && (!('grade' in m) || m.grade == null)
           && m.counts.values().hasOnly([m.repetitions]) && r.counts == m.counts
           && r.studentEmail == request.auth.token.email.lower() && r.studentName == m.studentName
           && r.title == m.title && r.characters == m.characters && r.repetitions == m.repetitions
