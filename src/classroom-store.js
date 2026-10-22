@@ -202,35 +202,6 @@ export function createClassroomStore({
       return { grade };
     });
   }
-  async function setStudentPracticeAccess(input) {
-    const user = identity();
-    await requireTeacher(user);
-    const enrollmentId = recordId(input.enrollmentId);
-    if (typeof input.allowed !== "boolean") fail("Choose whether to allow practice.");
-    const ref = doc(db, "enrollments", enrollmentId);
-    const result = await runTransaction(db, async (tx) => {
-      const snapshot = await tx.get(ref);
-      if (!snapshot.exists()) fail("Student assignment not found.");
-      const enrollment = snapshot.data();
-      if (!Number.isInteger(enrollment.grade))
-        fail("Grade the student before changing practice access.");
-      const update = {
-        practiceAllowed: input.allowed,
-        updatedAt: serverTimestamp(),
-      };
-      if (input.allowed) {
-        update.status = "in-progress";
-        update.submittedAt = null;
-        update.activeAttemptId = null;
-      }
-      tx.update(ref, update);
-      return { allowed: input.allowed };
-    });
-    const saved = await getDocFromServer(ref);
-    if (!saved.exists() || saved.data().practiceAllowed !== input.allowed)
-      fail("Firebase did not confirm the practice access change. Refresh and try again.");
-    return { ...result, practiceAllowed: saved.data().practiceAllowed, status: saved.data().status };
-  }
   async function joinAssignment(input) {
     const user = identity();
     const code = String(input.code || "")
@@ -284,6 +255,8 @@ export function createClassroomStore({
       checkOpen(a);
       if (e.status === "submitted")
         fail("This assignment has already been submitted.");
+      if (e.grade != null)
+        fail("This assignment has been graded. Further practice is closed.");
       const index = input.characterIndex;
       if (!Number.isInteger(index) || index < 0 || index >= a.characters.length)
         fail("Choose a character in this assignment.");
@@ -356,6 +329,8 @@ export function createClassroomStore({
       const a = aDoc.data();
       if (attempt.status === "completed")
         return { counts: countsArray(e), alreadyRecorded: true };
+      if (e.grade != null)
+        fail("This assignment has been graded. Further practice is closed.");
       checkOpen(a);
       if (
         e.status === "submitted" ||
@@ -433,6 +408,8 @@ export function createClassroomStore({
       if (sDoc.exists() && eDoc.data().status === "submitted")
         return { submissionId: sDoc.id, alreadySubmitted: true };
       const e = eDoc.data();
+      if (e.grade != null)
+        fail("This assignment has been graded. Further submission is closed.");
       const aDoc = await tx.get(doc(db, "assignmentCodes", e.code));
       checkOpen(aDoc.data());
       if (!canSubmit(countsArray(e), e.characters, e.repetitions))
@@ -468,7 +445,6 @@ export function createClassroomStore({
     createAssignment,
     setAssignmentStatus,
     updateStudentGrade,
-    setStudentPracticeAccess,
     joinAssignment,
     beginAttempt,
     completeAttempt,
