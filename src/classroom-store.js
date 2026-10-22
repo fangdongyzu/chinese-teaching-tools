@@ -208,7 +208,7 @@ export function createClassroomStore({
     const enrollmentId = recordId(input.enrollmentId);
     if (typeof input.allowed !== "boolean") fail("Choose whether to allow practice.");
     const ref = doc(db, "enrollments", enrollmentId);
-    return runTransaction(db, async (tx) => {
+    const result = await runTransaction(db, async (tx) => {
       const snapshot = await tx.get(ref);
       if (!snapshot.exists()) fail("Student assignment not found.");
       const enrollment = snapshot.data();
@@ -226,6 +226,10 @@ export function createClassroomStore({
       tx.update(ref, update);
       return { allowed: input.allowed };
     });
+    const saved = await getDocFromServer(ref);
+    if (!saved.exists() || saved.data().practiceAllowed !== input.allowed)
+      fail("Firebase did not confirm the practice access change. Refresh and try again.");
+    return { ...result, practiceAllowed: saved.data().practiceAllowed, status: saved.data().status };
   }
   async function joinAssignment(input) {
     const user = identity();
