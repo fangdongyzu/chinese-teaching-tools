@@ -367,7 +367,7 @@ async function reviewAssignment(id, controls = { status: "all", sort: "recorded"
     `${dialogHead(a.title)}<div class="panel-heading"><span><code>${e(a.code)}</code> ${badge(a)}</span><div>${button("Copy code", "copy-code", a.code, "small")}${button(a.status === "open" ? "Close assignment" : "Reopen", "toggle-assignment", a.id, "small")}</div></div><p class="muted">${a.characters.length} characters × ${a.repetitions} repetitions · ${a.mode === "write" ? "Write from memory" : "Guided tracing"}</p>${a.studentEmails.length ? `<p class="muted">Assigned emails: ${e(a.studentEmails.join(", "))}</p>` : '<p class="muted">Any signed-in student with the code can join.</p>'}<div class="roster-controls"><label>Submission status<select id="roster-status"><option value="all" ${controls.status === "all" ? "selected" : ""}>All students</option><option value="submitted" ${controls.status === "submitted" ? "selected" : ""}>Submitted</option><option value="not-submitted" ${controls.status === "not-submitted" ? "selected" : ""}>Not submitted</option></select></label><label>Sort by<select id="roster-sort"><option value="recorded" ${controls.sort === "recorded" ? "selected" : ""}>Recorded · high to low</option><option value="status" ${controls.sort === "status" ? "selected" : ""}>Status · submitted first</option><option value="name" ${controls.sort === "name" ? "selected" : ""}>Student name</option></select></label></div><div class="table-wrap"><table><thead><tr><th>Student</th><th>Recorded</th><th>Status</th><th>Grade / 100</th><th></th></tr></thead><tbody>${visibleMembers
       .map((r) => {
         const p = progress(r);
-        return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" ? "" : "gray"}">${r.status === "submitted" ? "Submitted" : "Practicing"}</span></td><td><div class="grade-entry"><input class="grade-input" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Grade for ${e(r.studentName)}" placeholder="—" value="${r.grade ?? ""}" data-grade-id="${e(r.id)}"><button class="btn small" data-action="save-grade" data-id="${e(r.id)}">Save</button></div></td><td><div class="roster-actions">${button("Change name", "edit-student-name", r.id, "small")}${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
+        return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" ? "" : "gray"}">${r.status === "submitted" ? "Submitted" : "Practicing"}</span></td><td><div class="grade-entry"><input class="grade-input" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Grade for ${e(r.studentName)}" placeholder="—" value="${r.grade ?? ""}" data-grade-id="${e(r.id)}"><button class="btn small" data-action="save-grade" data-id="${e(r.id)}">Save</button></div></td><td><div class="roster-actions">${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
       })
       .join(
         "",
@@ -375,40 +375,6 @@ async function reviewAssignment(id, controls = { status: "all", sort: "recorded"
   );
   dialog.querySelector("#roster-status").onchange = (event) => reviewAssignment(id, { ...controls, status: event.target.value });
   dialog.querySelector("#roster-sort").onchange = (event) => reviewAssignment(id, { ...controls, sort: event.target.value });
-}
-function editStudentName(id) {
-  const r = state.enrollments.find((student) => student.id === id);
-  if (!r) return;
-  openDialog(
-    `${dialogHead("Change student name")}<p class="muted">This name appears in this assignment’s roster and results. The student’s Google account and email stay the same.</p><form id="student-name-form"><div class="field"><label for="student-name">Student name</label><input id="student-name" name="studentName" required maxlength="120" value="${e(r.studentName)}" autocomplete="name"></div><div class="form-error" id="student-name-error" role="alert"></div><div class="form-actions"><button class="btn" type="button" data-action="close-dialog">Cancel</button><button class="btn primary" type="submit">Save name</button></div></form>`,
-  );
-  dialog.querySelector("#student-name-form").onsubmit = async (event) => {
-    event.preventDefault();
-    const submit = event.target.querySelector('[type="submit"]');
-    const studentName = new FormData(event.target)
-      .get("studentName")
-      .trim();
-    submit.disabled = true;
-    dialog.querySelector("#student-name-error").textContent = "";
-    try {
-      if (preview) {
-        r.studentName = studentName;
-      } else {
-        await call("updateStudentName", { enrollmentId: id, studentName });
-        r.studentName = studentName;
-      }
-      state.enrollments = state.enrollments.map((student) =>
-        student.id === id ? { ...student, studentName } : student,
-      );
-      dialog.close();
-      toast("Student name updated.");
-    } catch (error) {
-      dialog.querySelector("#student-name-error").textContent =
-        errorMessage(error);
-    } finally {
-      if (submit.isConnected) submit.disabled = false;
-    }
-  };
 }
 async function reviewStudent(id) {
   const r = state.enrollments.find((r) => r.id === id);
@@ -555,7 +521,6 @@ async function action(event) {
       toast("Assignment code copied.");
     } else if (name === "review-assignment") await reviewAssignment(id);
     else if (name === "review-student") await reviewStudent(id);
-    else if (name === "edit-student-name") editStudentName(id);
     else if (name === "save-grade") {
       const input = dialog.querySelector(`[data-grade-id="${CSS.escape(id)}"]`);
       const value = input.value.trim();
