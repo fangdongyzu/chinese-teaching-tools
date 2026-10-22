@@ -193,8 +193,44 @@ export function createClassroomStore({
     return runTransaction(db, async (tx) => {
       const snapshot = await tx.get(ref);
       if (!snapshot.exists()) fail("Student assignment not found.");
-      tx.update(ref, { grade, updatedAt: serverTimestamp() });
+      tx.update(ref, {
+        grade,
+        gradedAt: grade === null ? null : serverTimestamp(),
+        practiceAllowed: false,
+        updatedAt: serverTimestamp(),
+      });
       return { grade };
+    });
+  }
+  async function setStudentPracticeAccess(input) {
+    const user = identity();
+    await requireTeacher(user);
+    const enrollmentId = recordId(input.enrollmentId);
+    if (typeof input.allowed !== "boolean") fail("Choose whether to allow practice.");
+    const ref = doc(db, "enrollments", enrollmentId);
+    return runTransaction(db, async (tx) => {
+      const snapshot = await tx.get(ref);
+      if (!snapshot.exists()) fail("Student assignment not found.");
+      const enrollment = snapshot.data();
+      if (!Number.isInteger(enrollment.grade))
+        fail("Grade the student before changing practice access.");
+      const update = {
+        practiceAllowed: input.allowed,
+        updatedAt: serverTimestamp(),
+      };
+      if (input.allowed) {
+        update.status = "in-progress";
+        update.submittedAt = null;
+        update.activeAttemptId = null;
+        if (enrollment.status === "submitted") {
+          update.counts = Object.fromEntries(enrollment.characters.map((char) => [char, 0]));
+          update.totalMistakes = 0;
+          update.totalElapsedMs = 0;
+          update.lastCountedAttemptId = null;
+        }
+      }
+      tx.update(ref, update);
+      return { allowed: input.allowed };
     });
   }
   async function joinAssignment(input) {
@@ -396,7 +432,7 @@ export function createClassroomStore({
       const eDoc = await tx.get(ref);
       const sDoc = await tx.get(submissionRef);
       if (!eDoc.exists()) fail("Join this assignment first.");
-      if (sDoc.exists())
+      if (sDoc.exists() && eDoc.data().status === "submitted")
         return { submissionId: sDoc.id, alreadySubmitted: true };
       const e = eDoc.data();
       const aDoc = await tx.get(doc(db, "assignmentCodes", e.code));
@@ -422,6 +458,7 @@ export function createClassroomStore({
         status: "submitted",
         submittedAt: serverTimestamp(),
         activeAttemptId: null,
+        practiceAllowed: false,
         updatedAt: serverTimestamp(),
       });
       return { submissionId: submissionRef.id, alreadySubmitted: false };
@@ -433,6 +470,7 @@ export function createClassroomStore({
     createAssignment,
     setAssignmentStatus,
     updateStudentGrade,
+    setStudentPracticeAccess,
     joinAssignment,
     beginAttempt,
     completeAttempt,
