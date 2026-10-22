@@ -702,8 +702,6 @@ async function action(event) {
     toast(errorMessage(error), true);
     if (b.isConnected) {
       b.disabled = false;
-      if (name === "set-practice-access")
-        b.textContent = b.dataset.enabled === "true" ? "Unlock practice" : "Lock practice";
     }
   }
 }
