@@ -483,6 +483,12 @@ code {
   align-items: center;
   gap: 12px;
 }
+.student-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
 .assignment-card h2 {
   margin: 0;
 }
