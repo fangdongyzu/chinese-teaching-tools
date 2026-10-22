@@ -182,21 +182,6 @@ export function createClassroomStore({
       return { status: input.status };
     });
   }
-  async function updateStudentName(input) {
-    const user = identity();
-    await requireTeacher(user);
-    const enrollmentId = recordId(input.enrollmentId);
-    const studentName = String(input.studentName || "").trim();
-    if (!studentName || studentName.length > 120)
-      fail("Enter a student name up to 120 characters.");
-    const ref = doc(db, "enrollments", enrollmentId);
-    return runTransaction(db, async (tx) => {
-      const snapshot = await tx.get(ref);
-      if (!snapshot.exists()) fail("Student assignment not found.");
-      tx.update(ref, { studentName, updatedAt: serverTimestamp() });
-      return { studentName };
-    });
-  }
   async function updateStudentGrade(input) {
     const user = identity();
     await requireTeacher(user);
@@ -447,7 +432,6 @@ export function createClassroomStore({
     setTeacherAccess,
     createAssignment,
     setAssignmentStatus,
-    updateStudentName,
     updateStudentGrade,
     joinAssignment,
     beginAttempt,
