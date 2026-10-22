@@ -647,6 +647,7 @@ async function action(event) {
       if (!student) throw new Error("Student assignment not found.");
       const allowed = b.dataset.enabled === "true";
       b.disabled = true;
+      b.textContent = allowed ? "Redoing…" : "Locking…";
       await call("setStudentPracticeAccess", { enrollmentId: id, allowed });
       state.enrollments = state.enrollments.map((record) => record.id !== id ? record : {
         ...record,
@@ -662,7 +663,7 @@ async function action(event) {
         } : {}),
       });
       await reviewAssignment(student.assignmentId);
-      toast(allowed ? "Practice reset for this student." : "Practice locked for this student.");
+      toast(allowed ? "Redo is ready. The student can now redo the practice." : "Practice locked for this student.");
     }
     else if (name === "open-practice") await openPractice(id);
     else if (name === "toggle-assignment") {
@@ -725,7 +726,11 @@ async function action(event) {
     }
   } catch (error) {
     toast(errorMessage(error), true);
-    if (b.isConnected) b.disabled = false;
+    if (b.isConnected) {
+      b.disabled = false;
+      if (name === "set-practice-access")
+        b.textContent = b.dataset.enabled === "true" ? "Redo" : "Cancel redo";
+    }
   }
 }
 app.addEventListener("click", action);
