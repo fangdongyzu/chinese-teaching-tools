@@ -584,6 +584,7 @@ async function action(event) {
   if (!b) return;
   const name = b.dataset.action,
     id = b.dataset.id;
+  let pendingPracticeAccess = null;
   try {
     if (name === "login") {
       if (!configured) throw new Error("Firebase setup is not complete.");
@@ -648,7 +649,7 @@ async function action(event) {
       const allowed = b.dataset.enabled === "true";
       b.disabled = true;
       b.textContent = allowed ? "Unlocking…" : "Locking…";
-      await call("setStudentPracticeAccess", { enrollmentId: id, allowed });
+      pendingPracticeAccess = { student, assignmentId: student.assignmentId };
       state.enrollments = state.enrollments.map((record) => record.id !== id ? record : {
         ...record,
         practiceAllowed: allowed,
@@ -659,6 +660,8 @@ async function action(event) {
         } : {}),
       });
       await reviewAssignment(student.assignmentId);
+      await call("setStudentPracticeAccess", { enrollmentId: id, allowed });
+      pendingPracticeAccess = null;
       toast(allowed ? "Practice unlocked. The student can continue and submit." : "Practice locked for this student.");
     }
     else if (name === "open-practice") await openPractice(id);
@@ -721,6 +724,14 @@ async function action(event) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
   } catch (error) {
+    if (pendingPracticeAccess) {
+      state.enrollments = state.enrollments.map((record) =>
+        record.id === pendingPracticeAccess.student.id
+          ? pendingPracticeAccess.student
+          : record,
+      );
+      await reviewAssignment(pendingPracticeAccess.assignmentId);
+    }
     toast(errorMessage(error), true);
     if (b.isConnected) {
       b.disabled = false;
