@@ -64,6 +64,11 @@ const isTeacher = () =>
 const teacherView = () => isTeacher() && !state.studentView;
 const personal = () =>
   state.enrollments.filter((r) => r.userId === state.user?.uid);
+const gradeIsCurrent = (r) =>
+  r.grade != null &&
+  (r.status !== "submitted" ||
+    r.gradedAt == null ||
+    timeValue(r.gradedAt) >= timeValue(r.submittedAt));
 const hasExpired = (a) => a.dueAt && timeValue(a.dueAt) < Date.now();
 const button = (label, action, id = "", classes = "") =>
   `<button class="btn ${classes}" data-action="${action}" ${id ? `data-id="${e(id)}"` : ""} ${action === "login" && (!configured || state.signingIn) ? "disabled" : ""}>${action === "login" && state.signingIn ? "Opening Google…" : label}</button>`;
@@ -104,12 +109,14 @@ function teacherAssignments() {
   ).length;
   return `<div class="page-heading"><div><div class="eyebrow">TEACHER WORKSPACE</div><h1>Your assignments</h1><p class="muted">Set the practice. See the progress.</p></div>${button("＋ New assignment", "new-assignment", "", "primary")}</div><div class="stats"><div class="stat"><strong>${state.assignments.filter((a) => a.status === "open" && !hasExpired(a)).length}</strong><span>Open assignments</span></div><div class="stat"><strong>${new Set(state.enrollments.map((r) => r.userId)).size}</strong><span>Students joined</span></div><div class="stat"><strong>${submissions}</strong><span>Submitted results</span></div></div><section class="panel"><div class="panel-heading"><h2>All assignments</h2><span class="muted" style="font-size:10px">${state.assignments.length} total</span></div>${
     state.assignments.length
-      ? `<div class="table-wrap"><table><thead><tr><th>Assignment</th><th>Practice</th><th>Code</th><th>Submitted</th><th>Status</th><th></th></tr></thead><tbody>${state.assignments
+      ? `<div class="table-wrap"><table><thead><tr><th>Assignment</th><th>Practice</th><th>Code</th><th>Submitted / Graded</th><th>Status</th><th></th></tr></thead><tbody>${state.assignments
           .map((a) => {
             const joined = state.enrollments.filter(
               (r) => r.assignmentId === a.id,
             );
-            return `<tr><td><strong>${e(a.title)}</strong><small>${e(a.className || activityName(a.activityType))}<br>${a.dueAt ? "Due " + e(dateLabel(a.dueAt)) : "No due date"}</small></td><td>${a.characters.length} characters × ${a.repetitions}<small>${a.mode === "write" ? "Write from memory" : "Guided tracing"}</small></td><td><code>${e(a.code)}</code></td><td>${joined.filter((r) => r.status === "submitted").length} / ${joined.length}<small>of joined students</small></td><td>${badge(a)}</td><td>${button("Review", "review-assignment", a.id, "small")}</td></tr>`;
+            const submitted = joined.filter((r) => r.status === "submitted");
+            const graded = submitted.filter(gradeIsCurrent).length;
+            return `<tr><td><strong>${e(a.title)}</strong><small>${e(a.className || activityName(a.activityType))}<br>${a.dueAt ? "Due " + e(dateLabel(a.dueAt)) : "No due date"}</small></td><td>${a.characters.length} characters × ${a.repetitions}<small>${a.mode === "write" ? "Write from memory" : "Guided tracing"}</small></td><td><code>${e(a.code)}</code></td><td>${submitted.length} / ${joined.length}<small>Submitted · ${graded} / ${submitted.length} graded</small></td><td>${badge(a)}</td><td>${button("Review", "review-assignment", a.id, "small")}</td></tr>`;
           })
           .join("")}</tbody></table></div>`
       : '<div class="empty"><span class="empty-symbol">▤</span>No assignments yet.<br>Create your first stroke-order assignment.</div>'
@@ -132,14 +139,15 @@ function studentAssignments() {
     .map((r) => {
       const p = progress(r),
         a = state.assignments.find((a) => a.id === r.assignmentId);
-      const graded = r.grade != null;
-      const status = graded ? "Graded" : r.status === "submitted" ? "Submitted" : "In progress";
+      const graded = gradeIsCurrent(r);
+      const practiceAllowed = r.practiceAllowed === true;
+      const status = practiceAllowed ? "Practice allowed" : graded ? "Graded" : r.status === "submitted" ? "Submitted" : "In progress";
       const action = r.status === "submitted"
         ? button("View results", "open-practice", r.assignmentId, "small")
-        : graded
+        : graded && !practiceAllowed
           ? '<span class="muted" style="font-size:10px">Practice closed</span>'
           : button(p.percent === 100 ? "Review & submit" : "Continue practice ↗", "open-practice", r.assignmentId, "small primary");
-      return `<section class="panel assignment-card"><div class="card-top"><span class="eyebrow" style="margin:0">筆順 · STROKE ORDER</span><div class="student-card-badges"><span class="badge ${graded ? "" : r.status === "submitted" ? "" : "gray"}">${status}</span>${graded ? `<span class="badge orange">Grade ${r.grade} / 100</span>` : ""}</div></div><div><h2>${e(r.title)}</h2><p class="muted">${e(r.className)} ${r.className ? "·" : ""} ${r.repetitions} repetitions per character</p></div><div class="character-preview" lang="zh">${e(r.characters.join(""))}</div><div><div class="progress-label"><span>${p.done} / ${p.target} repetitions</span><span>${p.percent}%</span></div><progress value="${p.done}" max="${p.target}" aria-label="${e(r.title)} progress"></progress></div><div class="card-bottom"><span class="muted" style="font-size:10px">${r.status === "submitted" ? "Submitted " + dateLabel(r.submittedAt) : a?.dueAt ? "Due " + dateLabel(a.dueAt) : "No due date"}</span>${action}</div></section>`;
+      return `<section class="panel assignment-card"><div class="card-top"><span class="eyebrow" style="margin:0">筆順 · STROKE ORDER</span><div class="student-card-badges"><span class="badge ${graded || practiceAllowed || r.status === "submitted" ? "" : "gray"}">${status}</span>${graded ? `<span class="badge orange">Grade ${r.grade} / 100</span>` : ""}</div></div><div><h2>${e(r.title)}</h2><p class="muted">${e(r.className)} ${r.className ? "·" : ""} ${r.repetitions} repetitions per character</p></div><div class="character-preview" lang="zh">${e(r.characters.join(""))}</div><div><div class="progress-label"><span>${p.done} / ${p.target} repetitions</span><span>${p.percent}%</span></div><progress value="${p.done}" max="${p.target}" aria-label="${e(r.title)} progress"></progress></div><div class="card-bottom"><span class="muted" style="font-size:10px">${r.status === "submitted" ? "Submitted " + dateLabel(r.submittedAt) : a?.dueAt ? "Due " + dateLabel(a.dueAt) : "No due date"}</span>${action}</div></section>`;
     })
     .join(
       "",
@@ -362,6 +370,8 @@ function wireForms() {
 async function reviewAssignment(id, controls = { status: "all", sort: "recorded" }) {
   const a = state.assignments.find((a) => a.id === id);
   const members = state.enrollments.filter((r) => r.assignmentId === id);
+  const submittedCount = members.filter((r) => r.status === "submitted").length;
+  const gradedCount = members.filter((r) => r.status === "submitted" && gradeIsCurrent(r)).length;
   const visibleMembers = members
     .filter((r) => controls.status === "all" || (controls.status === "submitted" ? r.status === "submitted" : r.status !== "submitted"))
     .sort((left, right) => {
@@ -371,10 +381,12 @@ async function reviewAssignment(id, controls = { status: "all", sort: "recorded"
       return left.studentName.localeCompare(right.studentName);
     });
   openDialog(
-    `${dialogHead(a.title)}<div class="panel-heading"><span><code>${e(a.code)}</code> ${badge(a)}</span><div>${button("Copy code", "copy-code", a.code, "small")}${button(a.status === "open" ? "Close assignment" : "Reopen", "toggle-assignment", a.id, "small")}</div></div><p class="muted">${a.characters.length} characters × ${a.repetitions} repetitions · ${a.mode === "write" ? "Write from memory" : "Guided tracing"}</p>${a.studentEmails.length ? `<p class="muted">Assigned emails: ${e(a.studentEmails.join(", "))}</p>` : '<p class="muted">Any signed-in student with the code can join.</p>'}<div class="roster-controls"><label>Submission status<select id="roster-status"><option value="all" ${controls.status === "all" ? "selected" : ""}>All students</option><option value="submitted" ${controls.status === "submitted" ? "selected" : ""}>Submitted</option><option value="not-submitted" ${controls.status === "not-submitted" ? "selected" : ""}>Not submitted</option></select></label><label>Sort by<select id="roster-sort"><option value="recorded" ${controls.sort === "recorded" ? "selected" : ""}>Recorded · high to low</option><option value="status" ${controls.sort === "status" ? "selected" : ""}>Status · submitted first</option><option value="name" ${controls.sort === "name" ? "selected" : ""}>Student name</option></select></label></div><div class="table-wrap"><table><thead><tr><th>Student</th><th>Recorded</th><th>Status</th><th>Grade / 100</th><th></th></tr></thead><tbody>${visibleMembers
+    `${dialogHead(a.title)}<div class="panel-heading"><span><code>${e(a.code)}</code> ${badge(a)}</span><div>${button("Copy code", "copy-code", a.code, "small")}${button(a.status === "open" ? "Close assignment" : "Reopen", "toggle-assignment", a.id, "small")}</div></div><p class="muted">${a.characters.length} characters × ${a.repetitions} repetitions · ${a.mode === "write" ? "Write from memory" : "Guided tracing"}</p>${a.studentEmails.length ? `<p class="muted">Assigned emails: ${e(a.studentEmails.join(", "))}</p>` : '<p class="muted">Any signed-in student with the code can join.</p>'}<div class="teacher-progress-summary"><span>Submitted <strong>${submittedCount} / ${members.length}</strong></span><span>Graded <strong>${gradedCount} / ${submittedCount}</strong> submitted</span></div><div class="roster-controls"><label>Submission status<select id="roster-status"><option value="all" ${controls.status === "all" ? "selected" : ""}>All students</option><option value="submitted" ${controls.status === "submitted" ? "selected" : ""}>Submitted</option><option value="not-submitted" ${controls.status === "not-submitted" ? "selected" : ""}>Not submitted</option></select></label><label>Sort by<select id="roster-sort"><option value="recorded" ${controls.sort === "recorded" ? "selected" : ""}>Recorded · high to low</option><option value="status" ${controls.sort === "status" ? "selected" : ""}>Status · submitted first</option><option value="name" ${controls.sort === "name" ? "selected" : ""}>Student name</option></select></label></div><div class="table-wrap"><table><thead><tr><th>Student</th><th>Recorded</th><th>Status</th><th>Grade / 100</th><th></th></tr></thead><tbody>${visibleMembers
       .map((r) => {
         const p = progress(r);
-        return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" ? "" : "gray"}">${r.status === "submitted" ? "Submitted" : "Practicing"}</span></td><td><div class="grade-entry"><input class="grade-input" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Grade for ${e(r.studentName)}" placeholder="—" value="${r.grade ?? ""}" data-grade-id="${e(r.id)}"><button class="btn small" data-action="save-grade" data-id="${e(r.id)}">Save</button></div></td><td><div class="roster-actions">${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
+        const studentStatus = r.status === "submitted" ? "Submitted" : r.grade != null ? r.practiceAllowed ? "Practice allowed" : "Graded · locked" : "Practicing";
+        const practiceControl = r.grade == null ? "" : `<button class="btn small" data-action="set-practice-access" data-id="${e(r.id)}" data-enabled="${r.practiceAllowed === true ? "false" : "true"}">${r.practiceAllowed === true ? "Lock practice" : "Allow practice"}</button>`;
+        return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" || r.grade != null ? "" : "gray"}">${studentStatus}</span></td><td><div class="grade-entry"><input class="grade-input" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Grade for ${e(r.studentName)}" placeholder="—" value="${r.grade ?? ""}" data-grade-id="${e(r.id)}"><button class="btn small" data-action="save-grade" data-id="${e(r.id)}">Save</button></div></td><td><div class="roster-actions">${practiceControl}${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
       })
       .join(
         "",
@@ -386,7 +398,7 @@ async function reviewAssignment(id, controls = { status: "all", sort: "recorded"
 async function reviewStudent(id) {
   const r = state.enrollments.find((r) => r.id === id);
   openDialog(
-    `${dialogHead(r.studentName)}<p class="muted">${e(r.studentEmail)} · ${e(r.title)}</p><div class="details-list"><div><small>Status</small>${r.status === "submitted" ? "Submitted " + e(dateLabel(r.submittedAt)) : "In progress · not submitted"}</div><div><small>Grade</small>${r.grade == null ? "Not graded" : `${r.grade} / 100`}</div><div><small>Recorded repetitions</small>${progress(r).done} / ${progress(r).target}</div><div><small>Reported elapsed time</small>${duration(r.totalElapsedMs)}</div><div><small>Reported try-agains</small>${r.totalMistakes}</div></div><div class="evidence-grid">${r.characters.map((char, i) => `<div class="evidence-item"><strong>${e(char)}</strong><small>${r.counts[i]} / ${r.repetitions}</small></div>`).join("")}</div><h3>Recorded practice attempts</h3><p class="muted">Spark edition: strokes, counts, and timing are reported by the student’s browser. Saved stroke paths support teacher review; they are not independent proof of practice or human authorship.</p><div id="attempt-list" class="loading">Loading recorded attempts…</div><div class="form-actions">${button("Back to assignment", "review-assignment", r.assignmentId)}</div>`,
+    `${dialogHead(r.studentName)}<p class="muted">${e(r.studentEmail)} · ${e(r.title)}</p><div class="details-list"><div><small>Status</small>${r.status === "submitted" ? "Submitted " + e(dateLabel(r.submittedAt)) : "In progress · not submitted"}</div><div><small>Grade</small>${gradeIsCurrent(r) ? `${r.grade} / 100` : r.grade == null ? "Not graded" : `Needs regrading · previous ${r.grade} / 100`}</div><div><small>Recorded repetitions</small>${progress(r).done} / ${progress(r).target}</div><div><small>Reported elapsed time</small>${duration(r.totalElapsedMs)}</div><div><small>Reported try-agains</small>${r.totalMistakes}</div></div><div class="evidence-grid">${r.characters.map((char, i) => `<div class="evidence-item"><strong>${e(char)}</strong><small>${r.counts[i]} / ${r.repetitions}</small></div>`).join("")}</div><h3>Recorded practice attempts</h3><p class="muted">Spark edition: strokes, counts, and timing are reported by the student’s browser. Saved stroke paths support teacher review; they are not independent proof of practice or human authorship.</p><div id="attempt-list" class="loading">Loading recorded attempts…</div><div class="form-actions">${button("Back to assignment", "review-assignment", r.assignmentId)}</div>`,
   );
   try {
     let attempts;
@@ -446,7 +458,7 @@ async function openPractice(id) {
     toast("Join the assignment first.", true);
     return;
   }
-  if (enrollment.grade != null && enrollment.status !== "submitted") {
+  if (enrollment.grade != null && enrollment.practiceAllowed !== true && enrollment.status !== "submitted") {
     toast("Your teacher has graded this assignment. Practice is closed.", true);
     return;
   }
@@ -540,9 +552,41 @@ async function action(event) {
         throw new Error("Enter a whole-number grade from 0 to 100, or leave it blank.");
       b.disabled = true;
       if (!preview) await call("updateStudentGrade", { enrollmentId: id, grade });
-      state.enrollments = state.enrollments.map((student) => student.id === id ? { ...student, grade } : student);
+      const gradedAt = grade === null ? null : Date.now();
+      const assignmentId = state.enrollments.find((student) => student.id === id)?.assignmentId;
+      const controls = {
+        status: dialog.querySelector("#roster-status")?.value || "all",
+        sort: dialog.querySelector("#roster-sort")?.value || "recorded",
+      };
+      state.enrollments = state.enrollments.map((student) => student.id === id ? { ...student, grade, gradedAt, practiceAllowed: false } : student);
+      if (assignmentId) await reviewAssignment(assignmentId, controls);
       toast(grade === null ? "Grade cleared." : "Grade saved.");
-      b.disabled = false;
+    }
+    else if (name === "set-practice-access") {
+      if (preview) throw new Error("Sign in to change real student practice access.");
+      const student = state.enrollments.find((record) => record.id === id);
+      if (!student) throw new Error("Student assignment not found.");
+      const allowed = b.dataset.enabled === "true";
+      b.disabled = true;
+      await call("setStudentPracticeAccess", { enrollmentId: id, allowed });
+      const restarting = allowed && student.status === "submitted";
+      state.enrollments = state.enrollments.map((record) => record.id !== id ? record : {
+        ...record,
+        practiceAllowed: allowed,
+        ...(allowed ? {
+          status: "in-progress",
+          submittedAt: null,
+          activeAttemptId: null,
+          ...(restarting ? {
+            counts: Object.fromEntries(record.characters.map((char) => [char, 0])),
+            totalMistakes: 0,
+            totalElapsedMs: 0,
+            lastCountedAttemptId: null,
+          } : {}),
+        } : {}),
+      });
+      await reviewAssignment(student.assignmentId);
+      toast(allowed ? "Practice reopened for this student." : "Practice locked for this student.");
     }
     else if (name === "open-practice") await openPractice(id);
     else if (name === "toggle-assignment") {
@@ -584,7 +628,7 @@ async function action(event) {
             r.studentEmail,
             r.status,
             progress(r).done,
-            r.grade ?? "",
+            gradeIsCurrent(r) ? r.grade : "",
             progress(r).target,
             Math.round(r.totalElapsedMs / 1000),
             r.totalMistakes,
