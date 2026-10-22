@@ -212,7 +212,7 @@ service cloud.firestore {
       allow list: if selfRecord(resource.data) || teacher();
       allow create: if googleUser() && validSubmission();
       allow update: if googleUser() && selfRecord(resource.data) && resource.data.status == 'submitted'
-        && get(memberPath(resource.data.assignmentId)).data.practiceAllowed == true && validSubmission();
+        && validSubmission();
       allow delete: if false;
     }
     match /{document=**} { allow read, write: if false; }
