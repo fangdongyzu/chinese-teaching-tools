@@ -144,16 +144,12 @@ service cloud.firestore {
           && next.updatedAt == request.time
           && (next.practiceAllowed == false
             ? changed.hasOnly(['practiceAllowed','updatedAt'])
-            : next.status == 'in-progress' && next.submittedAt == null && next.activeAttemptId == null
-              && (resource.data.status == 'submitted'
-                ? next.counts.keys().toSet() == resource.data.counts.keys().toSet()
-                  && next.counts.values().hasOnly([0]) && next.totalMistakes == 0
-                  && next.totalElapsedMs == 0 && next.lastCountedAttemptId == null
-                : resource.data.status == 'in-progress'
-                  && next.counts == resource.data.counts
-                  && next.totalMistakes == resource.data.totalMistakes
-                  && next.totalElapsedMs == resource.data.totalElapsedMs
-                  && next.lastCountedAttemptId == resource.data.lastCountedAttemptId));
+            : (!('practiceAllowed' in resource.data) || resource.data.practiceAllowed == false)
+              && (resource.data.status == 'submitted' || resource.data.status == 'in-progress')
+              && next.status == 'in-progress' && next.submittedAt == null && next.activeAttemptId == null
+              && next.counts.keys().toSet() == resource.data.counts.keys().toSet()
+              && next.counts.values().hasOnly([0]) && next.totalMistakes == 0
+              && next.totalElapsedMs == 0 && next.lastCountedAttemptId == null);
       }
       allow get: if googleUser() && (!exists(/databases/$(database)/documents/enrollments/$(enrollmentId)) || selfRecord(resource.data) || teacher());
       allow list: if selfRecord(resource.data) || teacher();
