@@ -267,7 +267,7 @@ async function bootstrap(user) {
 }
 function openDialog(content) {
   dialog.innerHTML = content;
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
 }
 const dialogHead = (title) =>
   `<div class="dialog-head"><div><div class="eyebrow">PRACTICE CLASSROOM</div><h2>${e(title)}</h2></div><button class="close" data-action="close-dialog" aria-label="Close dialog">×</button></div>`;
@@ -352,19 +352,29 @@ function wireForms() {
       }
     });
 }
-async function reviewAssignment(id) {
+async function reviewAssignment(id, controls = { status: "all", sort: "recorded" }) {
   const a = state.assignments.find((a) => a.id === id);
   const members = state.enrollments.filter((r) => r.assignmentId === id);
+  const visibleMembers = members
+    .filter((r) => controls.status === "all" || (controls.status === "submitted" ? r.status === "submitted" : r.status !== "submitted"))
+    .sort((left, right) => {
+      if (controls.sort === "status" && (left.status === "submitted") !== (right.status === "submitted"))
+        return left.status === "submitted" ? -1 : 1;
+      if (controls.sort === "recorded") return progress(right).done - progress(left).done || left.studentName.localeCompare(right.studentName);
+      return left.studentName.localeCompare(right.studentName);
+    });
   openDialog(
-    `${dialogHead(a.title)}<div class="panel-heading"><span><code>${e(a.code)}</code> ${badge(a)}</span><div>${button("Copy code", "copy-code", a.code, "small")}${button(a.status === "open" ? "Close assignment" : "Reopen", "toggle-assignment", a.id, "small")}</div></div><p class="muted">${a.characters.length} characters × ${a.repetitions} repetitions · ${a.mode === "write" ? "Write from memory" : "Guided tracing"}</p>${a.studentEmails.length ? `<p class="muted">Assigned emails: ${e(a.studentEmails.join(", "))}</p>` : '<p class="muted">Any signed-in student with the code can join.</p>'}<div class="table-wrap"><table><thead><tr><th>Student</th><th>Recorded</th><th>Status</th><th></th></tr></thead><tbody>${members
+    `${dialogHead(a.title)}<div class="panel-heading"><span><code>${e(a.code)}</code> ${badge(a)}</span><div>${button("Copy code", "copy-code", a.code, "small")}${button(a.status === "open" ? "Close assignment" : "Reopen", "toggle-assignment", a.id, "small")}</div></div><p class="muted">${a.characters.length} characters × ${a.repetitions} repetitions · ${a.mode === "write" ? "Write from memory" : "Guided tracing"}</p>${a.studentEmails.length ? `<p class="muted">Assigned emails: ${e(a.studentEmails.join(", "))}</p>` : '<p class="muted">Any signed-in student with the code can join.</p>'}<div class="roster-controls"><label>Submission status<select id="roster-status"><option value="all" ${controls.status === "all" ? "selected" : ""}>All students</option><option value="submitted" ${controls.status === "submitted" ? "selected" : ""}>Submitted</option><option value="not-submitted" ${controls.status === "not-submitted" ? "selected" : ""}>Not submitted</option></select></label><label>Sort by<select id="roster-sort"><option value="recorded" ${controls.sort === "recorded" ? "selected" : ""}>Recorded · high to low</option><option value="status" ${controls.sort === "status" ? "selected" : ""}>Status · submitted first</option><option value="name" ${controls.sort === "name" ? "selected" : ""}>Student name</option></select></label></div><div class="table-wrap"><table><thead><tr><th>Student</th><th>Recorded</th><th>Status</th><th>Grade / 100</th><th></th></tr></thead><tbody>${visibleMembers
       .map((r) => {
         const p = progress(r);
-        return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" ? "" : "gray"}">${r.status === "submitted" ? "Submitted" : "Practicing"}</span></td><td><div class="roster-actions">${button("Change name", "edit-student-name", r.id, "small")}${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
+        return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" ? "" : "gray"}">${r.status === "submitted" ? "Submitted" : "Practicing"}</span></td><td><div class="grade-entry"><input class="grade-input" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Grade for ${e(r.studentName)}" placeholder="—" value="${r.grade ?? ""}" data-grade-id="${e(r.id)}"><button class="btn small" data-action="save-grade" data-id="${e(r.id)}">Save</button></div></td><td><div class="roster-actions">${button("Change name", "edit-student-name", r.id, "small")}${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
       })
       .join(
         "",
-      )}</tbody></table>${!members.length ? '<div class="empty">No students have joined yet.</div>' : ""}</div><div class="form-actions">${button("Export results CSV", "export-results", id)}${button("Done", "close-dialog", "", "primary")}</div>`,
+      )}</tbody></table>${!members.length ? '<div class="empty">No students have joined yet.</div>' : visibleMembers.length === 0 ? '<div class="empty">No students match this status.</div>' : ""}</div><div class="form-actions">${button("Export results CSV", "export-results", id)}${button("Done", "close-dialog", "", "primary")}</div>`,
   );
+  dialog.querySelector("#roster-status").onchange = (event) => reviewAssignment(id, { ...controls, status: event.target.value });
+  dialog.querySelector("#roster-sort").onchange = (event) => reviewAssignment(id, { ...controls, sort: event.target.value });
 }
 function editStudentName(id) {
   const r = state.enrollments.find((student) => student.id === id);
@@ -403,7 +413,7 @@ function editStudentName(id) {
 async function reviewStudent(id) {
   const r = state.enrollments.find((r) => r.id === id);
   openDialog(
-    `${dialogHead(r.studentName)}<p class="muted">${e(r.studentEmail)} · ${e(r.title)}</p><div class="details-list"><div><small>Status</small>${r.status === "submitted" ? "Submitted " + e(dateLabel(r.submittedAt)) : "In progress · not submitted"}</div><div><small>Recorded repetitions</small>${progress(r).done} / ${progress(r).target}</div><div><small>Reported elapsed time</small>${duration(r.totalElapsedMs)}</div><div><small>Reported try-agains</small>${r.totalMistakes}</div></div><div class="evidence-grid">${r.characters.map((char, i) => `<div class="evidence-item"><strong>${e(char)}</strong><small>${r.counts[i]} / ${r.repetitions}</small></div>`).join("")}</div><h3>Recorded practice attempts</h3><p class="muted">Spark edition: strokes, counts, and timing are reported by the student’s browser. Saved stroke paths support teacher review; they are not independent proof of practice or human authorship.</p><div id="attempt-list" class="loading">Loading recorded attempts…</div><div class="form-actions">${button("Back to assignment", "review-assignment", r.assignmentId)}</div>`,
+    `${dialogHead(r.studentName)}<p class="muted">${e(r.studentEmail)} · ${e(r.title)}</p><div class="details-list"><div><small>Status</small>${r.status === "submitted" ? "Submitted " + e(dateLabel(r.submittedAt)) : "In progress · not submitted"}</div><div><small>Grade</small>${r.grade == null ? "Not graded" : `${r.grade} / 100`}</div><div><small>Recorded repetitions</small>${progress(r).done} / ${progress(r).target}</div><div><small>Reported elapsed time</small>${duration(r.totalElapsedMs)}</div><div><small>Reported try-agains</small>${r.totalMistakes}</div></div><div class="evidence-grid">${r.characters.map((char, i) => `<div class="evidence-item"><strong>${e(char)}</strong><small>${r.counts[i]} / ${r.repetitions}</small></div>`).join("")}</div><h3>Recorded practice attempts</h3><p class="muted">Spark edition: strokes, counts, and timing are reported by the student’s browser. Saved stroke paths support teacher review; they are not independent proof of practice or human authorship.</p><div id="attempt-list" class="loading">Loading recorded attempts…</div><div class="form-actions">${button("Back to assignment", "review-assignment", r.assignmentId)}</div>`,
   );
   try {
     let attempts;
@@ -546,6 +556,18 @@ async function action(event) {
     } else if (name === "review-assignment") await reviewAssignment(id);
     else if (name === "review-student") await reviewStudent(id);
     else if (name === "edit-student-name") editStudentName(id);
+    else if (name === "save-grade") {
+      const input = dialog.querySelector(`[data-grade-id="${CSS.escape(id)}"]`);
+      const value = input.value.trim();
+      const grade = value === "" ? null : Number(value);
+      if (grade !== null && (!Number.isInteger(grade) || grade < 0 || grade > 100))
+        throw new Error("Enter a whole-number grade from 0 to 100, or leave it blank.");
+      b.disabled = true;
+      if (!preview) await call("updateStudentGrade", { enrollmentId: id, grade });
+      state.enrollments = state.enrollments.map((student) => student.id === id ? { ...student, grade } : student);
+      toast(grade === null ? "Grade cleared." : "Grade saved.");
+      b.disabled = false;
+    }
     else if (name === "open-practice") await openPractice(id);
     else if (name === "toggle-assignment") {
       if (preview) throw new Error("Sign in to change a real assignment.");
@@ -571,6 +593,7 @@ async function action(event) {
           "Email",
           "Status",
           "Recorded repetitions",
+          "Grade",
           "Required repetitions",
           "Elapsed seconds",
           "Reported try-agains",
@@ -585,6 +608,7 @@ async function action(event) {
             r.studentEmail,
             r.status,
             progress(r).done,
+            r.grade ?? "",
             progress(r).target,
             Math.round(r.totalElapsedMs / 1000),
             r.totalMistakes,
@@ -698,3 +722,4 @@ if (preview) {
     if (!state.profile) render();
   });
 }
+

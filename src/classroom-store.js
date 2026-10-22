@@ -197,6 +197,21 @@ export function createClassroomStore({
       return { studentName };
     });
   }
+  async function updateStudentGrade(input) {
+    const user = identity();
+    await requireTeacher(user);
+    const enrollmentId = recordId(input.enrollmentId);
+    const grade = input.grade === null ? null : Number(input.grade);
+    if (grade !== null && (!Number.isInteger(grade) || grade < 0 || grade > 100))
+      fail("Enter a whole-number grade from 0 to 100, or leave it blank.");
+    const ref = doc(db, "enrollments", enrollmentId);
+    return runTransaction(db, async (tx) => {
+      const snapshot = await tx.get(ref);
+      if (!snapshot.exists()) fail("Student assignment not found.");
+      tx.update(ref, { grade, updatedAt: serverTimestamp() });
+      return { grade };
+    });
+  }
   async function joinAssignment(input) {
     const user = identity();
     const code = String(input.code || "")
@@ -433,6 +448,7 @@ export function createClassroomStore({
     createAssignment,
     setAssignmentStatus,
     updateStudentName,
+    updateStudentGrade,
     joinAssignment,
     beginAttempt,
     completeAttempt,
@@ -446,3 +462,4 @@ export function createClassroomStore({
     },
   };
 }
+

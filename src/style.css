@@ -360,6 +360,32 @@ p {
 .table-wrap {
   overflow-x: auto;
 }
+.roster-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: end;
+  margin: 18px 0 12px;
+}
+.roster-controls label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.roster-controls select {
+  min-width: 168px;
+}
+.grade-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.grade-input {
+  width: 66px;
+  min-width: 66px;
+  padding: 8px 7px;
+}
 .roster-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1420,3 +1446,4 @@ dialog::backdrop {
 .auth-help .btn {
   margin-top: 10px;
 }
+
