@@ -393,13 +393,13 @@ async function reviewAssignment(id, controls = { status: "all", sort: "recorded"
   );
   dialog.querySelector("#roster-status").onchange = (event) => reviewAssignment(id, { ...controls, status: event.target.value });
   dialog.querySelector("#roster-sort").onchange = (event) => reviewAssignment(id, { ...controls, sort: event.target.value });
-  wireGradeAutosave(id, controls);
+  wireGradeInputs(id, controls);
 }
 function gradeSaveStatus(id, message) {
   const target = dialog.querySelector(`[data-grade-state="${CSS.escape(id)}"]`);
   if (target) target.textContent = message;
 }
-function wireGradeAutosave(assignmentId, controls) {
+function wireGradeInputs(assignmentId, controls) {
   dialog.querySelectorAll("[data-grade-id]").forEach((input) => {
     const id = input.dataset.gradeId;
     let save = gradeSaveStates.get(id);
@@ -414,15 +414,10 @@ function wireGradeAutosave(assignmentId, controls) {
     save.assignmentId = assignmentId;
     save.controls = controls;
     if (save.latestValue !== save.lastSavedValue) input.value = save.latestValue;
-    const queueSave = (immediate = false) => {
+    input.addEventListener("input", () => {
       save.latestValue = input.value.trim();
-      gradeSaveStatus(id, immediate ? "Saving…" : "Typing…");
-      clearTimeout(save.timer);
-      save.timer = setTimeout(() => commitGrade(id), immediate ? 0 : 650);
-    };
-    input.addEventListener("input", () => queueSave());
-    input.addEventListener("change", () => queueSave(true));
-    input.addEventListener("blur", () => queueSave(true));
+      gradeSaveStatus(id, save.latestValue === save.lastSavedValue ? "Saved" : "Not saved");
+    });
   });
 }
 async function commitGrade(id) {
