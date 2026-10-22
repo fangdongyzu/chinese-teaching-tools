@@ -400,6 +400,11 @@ p {
   min-width: 66px;
   padding: 8px 7px;
 }
+.grade-save-state {
+  min-width: 68px;
+  color: var(--muted);
+  font-size: 9px;
+}
 .roster-actions {
   display: flex;
   flex-wrap: wrap;
