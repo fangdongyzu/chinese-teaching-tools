@@ -120,26 +120,49 @@ service cloud.firestore {
       }
       function submitTransition() {
         let r = request.resource.data;
-        return r.diff(resource.data).affectedKeys().hasOnly(['status','submittedAt','activeAttemptId','updatedAt'])
+        return r.diff(resource.data).affectedKeys().hasOnly(['status','submittedAt','activeAttemptId','practiceAllowed','updatedAt'])
           && r.status == 'submitted' && r.submittedAt == request.time && r.activeAttemptId == null
+          && r.practiceAllowed == false
           && resource.data.counts.values().hasOnly([resource.data.repetitions])
           && getAfter(/databases/$(database)/documents/submissions/$(enrollmentId)).data.submittedAt == request.time;
       }
       function teacherGradeTransition() {
         let next = request.resource.data;
-        return next.diff(resource.data).affectedKeys().hasOnly(['grade','updatedAt'])
-          && next.diff(resource.data).affectedKeys().hasAny(['grade'])
+        return next.diff(resource.data).affectedKeys().hasOnly(['grade','gradedAt','practiceAllowed','updatedAt'])
+          && next.diff(resource.data).affectedKeys().hasAny(['grade','gradedAt'])
           && (!('grade' in next) || next.grade == null || (next.grade is int && next.grade >= 0 && next.grade <= 100))
+          && next.gradedAt == (next.grade == null ? null : request.time)
+          && next.practiceAllowed == false
           && next.updatedAt == request.time;
+      }
+      function teacherPracticeTransition() {
+        let next = request.resource.data;
+        let changed = next.diff(resource.data).affectedKeys();
+        return ('grade' in resource.data) && resource.data.grade is int
+          && changed.hasOnly(['practiceAllowed','status','submittedAt','activeAttemptId','counts','totalMistakes','totalElapsedMs','lastCountedAttemptId','updatedAt'])
+          && changed.hasAny(['practiceAllowed']) && next.practiceAllowed is bool
+          && next.updatedAt == request.time
+          && (next.practiceAllowed == false
+            ? changed.hasOnly(['practiceAllowed','updatedAt'])
+            : next.status == 'in-progress' && next.submittedAt == null && next.activeAttemptId == null
+              && (resource.data.status == 'submitted'
+                ? next.counts.keys().toSet() == resource.data.counts.keys().toSet()
+                  && next.counts.values().hasOnly([0]) && next.totalMistakes == 0
+                  && next.totalElapsedMs == 0 && next.lastCountedAttemptId == null
+                : resource.data.status == 'in-progress'
+                  && next.counts == resource.data.counts
+                  && next.totalMistakes == resource.data.totalMistakes
+                  && next.totalElapsedMs == resource.data.totalElapsedMs
+                  && next.lastCountedAttemptId == resource.data.lastCountedAttemptId));
       }
       allow get: if googleUser() && (!exists(/databases/$(database)/documents/enrollments/$(enrollmentId)) || selfRecord(resource.data) || teacher());
       allow list: if selfRecord(resource.data) || teacher();
       allow create: if googleUser() && validJoin();
       allow update: if (selfRecord(resource.data) && resource.data.status == 'in-progress'
-        && (!('grade' in resource.data) || resource.data.grade == null)
+        && (!('grade' in resource.data) || resource.data.grade == null || (('practiceAllowed' in resource.data) && resource.data.practiceAllowed == true))
         && open(resource.data.assignmentId) && request.resource.data.updatedAt == request.time
         && (startTransition() || countTransition() || submitTransition()))
-        || (teacher() && teacherGradeTransition());
+        || (teacher() && (teacherGradeTransition() || teacherPracticeTransition()));
       allow delete: if false;
       match /fingerprints/{hash} {
         function parent() { return get(/databases/$(database)/documents/enrollments/$(enrollmentId)).data; }
@@ -160,7 +183,7 @@ service cloud.firestore {
         return r.keys().hasOnly(['assignmentId','userId','code','characterIndex','character','status','startedAt','endedAt','elapsedMs','mistakes','strokes','fingerprint','validationSource'])
           && r.userId == request.auth.uid && r.code == a.code && open(r.assignmentId)
           && m.userId == request.auth.uid && m.status == 'in-progress'
-          && (!('grade' in m) || m.grade == null)
+          && (!('grade' in m) || m.grade == null || (('practiceAllowed' in m) && m.practiceAllowed == true))
           && r.characterIndex is int && r.characterIndex >= 0 && r.characterIndex < a.characters.size()
           && r.character == a.characters[r.characterIndex] && m.counts[r.character] < a.repetitions
           && r.status == 'started' && r.startedAt == request.time && r.endedAt == null
@@ -174,7 +197,7 @@ service cloud.firestore {
           && r.status == 'completed' && r.endedAt == request.time && open(resource.data.assignmentId)
           && request.time <= resource.data.startedAt + duration.value(30, 'm')
           && m.activeAttemptId == attemptId && m.status == 'in-progress'
-          && (!('grade' in m) || m.grade == null)
+          && (!('grade' in m) || m.grade == null || (('practiceAllowed' in m) && m.practiceAllowed == true))
           && r.elapsedMs is int && r.elapsedMs >= 0 && r.elapsedMs <= 1800000
           && r.mistakes is int && r.mistakes >= 0 && r.mistakes <= 10000
           && r.strokes is list && r.strokes.size() == assignment(resource.data.assignmentId).strokeCounts[resource.data.character]
@@ -197,7 +220,7 @@ service cloud.firestore {
         return r.keys().hasOnly(['assignmentId','userId','studentEmail','studentName','title','characters','repetitions','counts','totalMistakes','totalElapsedMs','submittedAt','status','validationSource'])
           && submissionId == r.assignmentId + '_' + request.auth.uid && r.userId == request.auth.uid
           && open(r.assignmentId) && m.userId == request.auth.uid && m.status == 'in-progress'
-          && (!('grade' in m) || m.grade == null)
+          && (!('grade' in m) || m.grade == null || (('practiceAllowed' in m) && m.practiceAllowed == true))
           && m.counts.values().hasOnly([m.repetitions]) && r.counts == m.counts
           && r.studentEmail == request.auth.token.email.lower() && r.studentName == m.studentName
           && r.title == m.title && r.characters == m.characters && r.repetitions == m.repetitions
@@ -208,7 +231,9 @@ service cloud.firestore {
       allow get: if googleUser() && (!exists(/databases/$(database)/documents/submissions/$(submissionId)) || selfRecord(resource.data) || teacher());
       allow list: if selfRecord(resource.data) || teacher();
       allow create: if googleUser() && validSubmission();
-      allow update, delete: if false;
+      allow update: if googleUser() && selfRecord(resource.data) && resource.data.status == 'submitted'
+        && get(memberPath(resource.data.assignmentId)).data.practiceAllowed == true && validSubmission();
+      allow delete: if false;
     }
     match /{document=**} { allow read, write: if false; }
   }
