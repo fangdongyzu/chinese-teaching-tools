@@ -142,7 +142,7 @@ function studentAssignments() {
         a = state.assignments.find((a) => a.id === r.assignmentId);
       const graded = gradeIsCurrent(r);
       const practiceAllowed = r.practiceAllowed === true;
-      const status = practiceAllowed ? "Redo available" : graded ? "Graded" : r.status === "submitted" ? "Submitted" : "In progress";
+      const status = practiceAllowed ? "Practice unlocked" : graded ? "Graded" : r.status === "submitted" ? "Submitted" : "In progress";
       const action = r.status === "submitted"
         ? button("View results", "open-practice", r.assignmentId, "small")
         : graded && !practiceAllowed
@@ -385,8 +385,8 @@ async function reviewAssignment(id, controls = { status: "all", sort: "recorded"
     `${dialogHead(a.title)}<div class="panel-heading"><span><code>${e(a.code)}</code> ${badge(a)}</span><div>${button("Copy code", "copy-code", a.code, "small")}${button(a.status === "open" ? "Close assignment" : "Reopen", "toggle-assignment", a.id, "small")}</div></div><p class="muted">${a.characters.length} characters × ${a.repetitions} repetitions · ${a.mode === "write" ? "Write from memory" : "Guided tracing"}</p>${a.studentEmails.length ? `<p class="muted">Assigned emails: ${e(a.studentEmails.join(", "))}</p>` : '<p class="muted">Any signed-in student with the code can join.</p>'}<div class="teacher-progress-summary"><span>Submitted <strong>${submittedCount} / ${members.length}</strong></span><span>Graded <strong>${gradedCount} / ${submittedCount}</strong> submitted</span></div><div class="roster-controls"><label>Submission status<select id="roster-status"><option value="all" ${controls.status === "all" ? "selected" : ""}>All students</option><option value="submitted" ${controls.status === "submitted" ? "selected" : ""}>Submitted</option><option value="not-submitted" ${controls.status === "not-submitted" ? "selected" : ""}>Not submitted</option></select></label><label>Sort by<select id="roster-sort"><option value="recorded" ${controls.sort === "recorded" ? "selected" : ""}>Recorded · high to low</option><option value="status" ${controls.sort === "status" ? "selected" : ""}>Status · submitted first</option><option value="name" ${controls.sort === "name" ? "selected" : ""}>Student name</option></select></label></div><div class="table-wrap"><table class="roster-table"><colgroup><col style="width:32%"><col style="width:12%"><col style="width:15%"><col style="width:22%"><col style="width:19%"></colgroup><thead><tr><th>Student</th><th>Recorded</th><th>Status</th><th>Grade / 100</th><th></th></tr></thead><tbody>${visibleMembers
       .map((r) => {
         const p = progress(r);
-        const studentStatus = r.status === "submitted" ? "Submitted" : r.grade != null ? r.practiceAllowed ? "Redo available" : "Graded · locked" : "Practicing";
-        const practiceControl = r.grade == null ? "" : `<button class="btn small" data-action="set-practice-access" data-id="${e(r.id)}" data-enabled="${r.practiceAllowed === true ? "false" : "true"}">${r.practiceAllowed === true ? "Cancel redo" : "Redo"}</button>`;
+        const studentStatus = r.status === "submitted" ? "Submitted" : r.grade != null ? r.practiceAllowed ? "Practice unlocked" : "Graded · locked" : "Practicing";
+        const practiceControl = r.grade == null ? "" : `<button class="btn small" data-action="set-practice-access" data-id="${e(r.id)}" data-enabled="${r.practiceAllowed === true ? "false" : "true"}">${r.practiceAllowed === true ? "Lock practice" : "Unlock practice"}</button>`;
         return `<tr><td><strong>${e(r.studentName)}</strong><small>${e(r.studentEmail)}</small></td><td>${p.done} / ${p.target}</td><td><span class="badge ${r.status === "submitted" || r.grade != null ? "" : "gray"}">${studentStatus}</span></td><td><div class="grade-entry"><input class="grade-input" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Grade for ${e(r.studentName)}" placeholder="—" value="${r.grade ?? ""}" data-grade-id="${e(r.id)}"><button class="btn small" data-action="save-grade" data-id="${e(r.id)}">Save</button><small class="grade-save-state" data-grade-state="${e(r.id)}" aria-live="polite"></small></div></td><td><div class="roster-actions">${practiceControl}${button("Details", "review-student", r.id, "small")}</div></td></tr>`;
       })
       .join(
@@ -647,7 +647,7 @@ async function action(event) {
       if (!student) throw new Error("Student assignment not found.");
       const allowed = b.dataset.enabled === "true";
       b.disabled = true;
-      b.textContent = allowed ? "Redoing…" : "Locking…";
+      b.textContent = allowed ? "Unlocking…" : "Locking…";
       await call("setStudentPracticeAccess", { enrollmentId: id, allowed });
       state.enrollments = state.enrollments.map((record) => record.id !== id ? record : {
         ...record,
@@ -656,14 +656,10 @@ async function action(event) {
           status: "in-progress",
           submittedAt: null,
           activeAttemptId: null,
-          counts: record.characters.map(() => 0),
-          totalMistakes: 0,
-          totalElapsedMs: 0,
-          lastCountedAttemptId: null,
         } : {}),
       });
       await reviewAssignment(student.assignmentId);
-      toast(allowed ? "Redo is ready. The student can now redo the practice." : "Practice locked for this student.");
+      toast(allowed ? "Practice unlocked. The student can continue and submit." : "Practice locked for this student.");
     }
     else if (name === "open-practice") await openPractice(id);
     else if (name === "toggle-assignment") {
@@ -729,7 +725,7 @@ async function action(event) {
     if (b.isConnected) {
       b.disabled = false;
       if (name === "set-practice-access")
-        b.textContent = b.dataset.enabled === "true" ? "Redo" : "Cancel redo";
+        b.textContent = b.dataset.enabled === "true" ? "Unlock practice" : "Lock practice";
     }
   }
 }
