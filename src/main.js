@@ -132,7 +132,14 @@ function studentAssignments() {
     .map((r) => {
       const p = progress(r),
         a = state.assignments.find((a) => a.id === r.assignmentId);
-      return `<section class="panel assignment-card"><div class="card-top"><span class="eyebrow" style="margin:0">筆順 · STROKE ORDER</span><div class="student-card-badges"><span class="badge ${r.status === "submitted" ? "" : "gray"}">${r.status === "submitted" ? "Submitted" : "In progress"}</span>${r.grade == null ? "" : `<span class="badge orange">Grade ${r.grade} / 100</span>`}</div></div><div><h2>${e(r.title)}</h2><p class="muted">${e(r.className)} ${r.className ? "·" : ""} ${r.repetitions} repetitions per character</p></div><div class="character-preview" lang="zh">${e(r.characters.join(""))}</div><div><div class="progress-label"><span>${p.done} / ${p.target} repetitions</span><span>${p.percent}%</span></div><progress value="${p.done}" max="${p.target}" aria-label="${e(r.title)} progress"></progress></div><div class="card-bottom"><span class="muted" style="font-size:10px">${r.status === "submitted" ? "Submitted " + dateLabel(r.submittedAt) : a?.dueAt ? "Due " + dateLabel(a.dueAt) : "No due date"}</span>${button(r.status === "submitted" ? "View results" : p.percent === 100 ? "Review & submit" : "Continue practice ↗", "open-practice", r.assignmentId, r.status === "submitted" ? "small" : "small primary")}</div></section>`;
+      const graded = r.grade != null;
+      const status = graded ? "Graded" : r.status === "submitted" ? "Submitted" : "In progress";
+      const action = r.status === "submitted"
+        ? button("View results", "open-practice", r.assignmentId, "small")
+        : graded
+          ? '<span class="muted" style="font-size:10px">Practice closed</span>'
+          : button(p.percent === 100 ? "Review & submit" : "Continue practice ↗", "open-practice", r.assignmentId, "small primary");
+      return `<section class="panel assignment-card"><div class="card-top"><span class="eyebrow" style="margin:0">筆順 · STROKE ORDER</span><div class="student-card-badges"><span class="badge ${graded ? "" : r.status === "submitted" ? "" : "gray"}">${status}</span>${graded ? `<span class="badge orange">Grade ${r.grade} / 100</span>` : ""}</div></div><div><h2>${e(r.title)}</h2><p class="muted">${e(r.className)} ${r.className ? "·" : ""} ${r.repetitions} repetitions per character</p></div><div class="character-preview" lang="zh">${e(r.characters.join(""))}</div><div><div class="progress-label"><span>${p.done} / ${p.target} repetitions</span><span>${p.percent}%</span></div><progress value="${p.done}" max="${p.target}" aria-label="${e(r.title)} progress"></progress></div><div class="card-bottom"><span class="muted" style="font-size:10px">${r.status === "submitted" ? "Submitted " + dateLabel(r.submittedAt) : a?.dueAt ? "Due " + dateLabel(a.dueAt) : "No due date"}</span>${action}</div></section>`;
     })
     .join(
       "",
@@ -437,6 +444,10 @@ async function openPractice(id) {
   const enrollment = personal().find((r) => r.assignmentId === id);
   if (!enrollment) {
     toast("Join the assignment first.", true);
+    return;
+  }
+  if (enrollment.grade != null && enrollment.status !== "submitted") {
+    toast("Your teacher has graded this assignment. Practice is closed.", true);
     return;
   }
   let assignment = state.assignments.find((a) => a.id === id);
