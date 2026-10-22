@@ -401,7 +401,7 @@ p {
   padding: 8px 7px;
 }
 .grade-save-state {
-  min-width: 68px;
+  min-width: 50px;
   color: var(--muted);
   font-size: 9px;
 }
