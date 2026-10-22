@@ -222,10 +222,6 @@ export function createClassroomStore({
         update.status = "in-progress";
         update.submittedAt = null;
         update.activeAttemptId = null;
-        update.counts = Object.fromEntries(enrollment.characters.map((char) => [char, 0]));
-        update.totalMistakes = 0;
-        update.totalElapsedMs = 0;
-        update.lastCountedAttemptId = null;
       }
       tx.update(ref, update);
       return { allowed: input.allowed };
