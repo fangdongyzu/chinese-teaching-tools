@@ -390,25 +390,41 @@ p {
 .roster-controls select {
   min-width: 168px;
 }
+.roster-table {
+  table-layout: fixed;
+}
 .grade-entry {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 .grade-input {
-  width: 66px;
-  min-width: 66px;
+  width: 56px;
+  min-width: 56px;
   padding: 8px 7px;
 }
 .grade-save-state {
-  min-width: 50px;
+  flex-basis: 100%;
+  min-width: 0;
   color: var(--muted);
   font-size: 9px;
+}
+.grade-entry > .btn.small {
+  padding: 7px 9px;
+  min-height: 34px;
+  font-size: 10px;
 }
 .roster-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
+}
+.roster-actions .btn.small {
+  padding: 7px 8px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 table {
   border-collapse: collapse;
