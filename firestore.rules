@@ -125,13 +125,6 @@ service cloud.firestore {
           && resource.data.counts.values().hasOnly([resource.data.repetitions])
           && getAfter(/databases/$(database)/documents/submissions/$(enrollmentId)).data.submittedAt == request.time;
       }
-      function teacherNameTransition() {
-        let next = request.resource.data;
-        return next.diff(resource.data).affectedKeys().hasOnly(['studentName','updatedAt'])
-          && next.studentName is string && next.studentName.size() > 0 && next.studentName.size() <= 120
-          && next.studentName != resource.data.studentName
-          && next.updatedAt == request.time;
-      }
       function teacherGradeTransition() {
         let next = request.resource.data;
         return next.diff(resource.data).affectedKeys().hasOnly(['grade','updatedAt'])
@@ -145,7 +138,7 @@ service cloud.firestore {
       allow update: if (selfRecord(resource.data) && resource.data.status == 'in-progress'
         && open(resource.data.assignmentId) && request.resource.data.updatedAt == request.time
         && (startTransition() || countTransition() || submitTransition()))
-        || (teacher() && (teacherNameTransition() || teacherGradeTransition()));
+        || (teacher() && teacherGradeTransition());
       allow delete: if false;
       match /fingerprints/{hash} {
         function parent() { return get(/databases/$(database)/documents/enrollments/$(enrollmentId)).data; }
